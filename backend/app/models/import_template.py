@@ -1,3 +1,4 @@
+from sqlalchemy import JSON as SAJSON, Column
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, Dict, TYPE_CHECKING
 from datetime import datetime
@@ -10,7 +11,6 @@ if TYPE_CHECKING:
 class ImportTemplateBase(SQLModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, max_length=500)
-    column_mapping: Dict[str, str] = Field(...)
     is_default: bool = Field(default=False)
     is_active: bool = Field(default=True)
 
@@ -20,6 +20,7 @@ class ImportTemplate(ImportTemplateBase, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: int = Field(..., foreign_key="tenants.id", index=True)
+    column_mapping: Dict[str, str] = Field(sa_column=Column(SAJSON), default={})
     created_by: Optional[int] = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

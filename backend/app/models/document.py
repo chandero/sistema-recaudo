@@ -1,3 +1,4 @@
+from sqlalchemy import JSON as SAJSON, Column
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
@@ -21,7 +22,6 @@ class DocumentTemplateBase(SQLModel):
     description: Optional[str] = Field(default=None, max_length=500)
     version: int = Field(default=1, ge=1)
     is_active: bool = Field(default=True)
-    variables_schema: Optional[dict] = Field(default=None)
 
 
 class DocumentTemplate(DocumentTemplateBase, table=True):
@@ -30,6 +30,7 @@ class DocumentTemplate(DocumentTemplateBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: int = Field(..., foreign_key="tenants.id", index=True)
     content: bytes = Field(...)
+    variables_schema: Optional[dict] = Field(sa_column=Column(SAJSON), default={})
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
@@ -39,7 +40,6 @@ class DocumentTemplate(DocumentTemplateBase, table=True):
 class GeneratedDocumentBase(SQLModel):
     filename: str = Field(..., min_length=1, max_length=300)
     document_type: str = Field(..., max_length=100)
-    variables_used: Optional[dict] = Field(default=None)
     resolution_number: Optional[str] = Field(default=None, max_length=100)
     radicado_number: Optional[str] = Field(default=None, max_length=100)
 
@@ -55,6 +55,7 @@ class GeneratedDocument(GeneratedDocumentBase, table=True):
     obligation_id: Optional[int] = Field(default=None, foreign_key="obligations.id")
     file_path: str = Field(..., max_length=500)
     file_size: int = Field(default=0)
+    variables_used: Optional[dict] = Field(sa_column=Column(SAJSON), default={})
     created_by: Optional[int] = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     

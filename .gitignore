@@ -1,64 +1,60 @@
 ```
+# Dependencies
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+frontend/node_modules/
+
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
 env/
-ENV/
+venv/
 .venv/
-.env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+*.tmp
 
-# IDE
+# Environment
+.env
+.env.local
+.env.*
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+target/
+
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
+Thumbs.db
+.DS_Store
 
 # Logs
 *.log
 
-# Environment variables
-.env
-.env.local
-*.env.*
-
 # Coverage
-.coverage
 coverage/
 htmlcov/
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pytest
-.pytest_cache/
-
-# Git
-.git/
-
-# OS
-.DS_Store
-Thumbs.db
 ```
