@@ -1,7 +1,11 @@
-from fastapi import APIRouter
-from app.api.v1.endpoints import auth, tenants
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.api.v1.endpoints import auth, tenants, clients, workflows, processes, documents
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
+api_router.include_router(clients.router, prefix="", tags=["Clients & Obligations"])
+api_router.include_router(workflows.router, prefix="/workflows", tags=["Workflows"])
+api_router.include_router(processes.router, prefix="/processes", tags=["Processes"])
+api_router.include_router(documents.router, prefix="/documents", tags=["Documents"])

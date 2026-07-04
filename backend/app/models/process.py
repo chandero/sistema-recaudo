@@ -1,3 +1,4 @@
+from sqlalchemy import JSON as SAJSON, Column
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
@@ -35,13 +36,7 @@ class CobroProcess(CobroProcessBase, table=True):
     current_state: Optional["WorkflowState"] = Relationship()
 
 
-class ProcessHistoryBase(SQLModel):
-    action: str = Field(..., max_length=200)
-    description: Optional[str] = Field(default=None, max_length=1000)
-    metadata: Optional[dict] = Field(default=None)
-
-
-class ProcessHistory(ProcessHistoryBase, table=True):
+class ProcessHistory(SQLModel, table=True):
     __tablename__ = "process_history"
     
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -49,6 +44,9 @@ class ProcessHistory(ProcessHistoryBase, table=True):
     user_id: Optional[int] = Field(default=None, foreign_key="users.id")
     previous_state_id: Optional[int] = Field(default=None, foreign_key="workflow_states.id")
     new_state_id: Optional[int] = Field(default=None, foreign_key="workflow_states.id")
+    action: str = Field(..., max_length=200)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    extra_data: Optional[dict] = Field(sa_column=Column(SAJSON), default={})
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     process: Optional["CobroProcess"] = Relationship(back_populates="history")
