@@ -1,60 +1,77 @@
 ```
 # Dependencies
-backend/venv/
-backend/.venv/
-backend/__pycache__/
-backend/.pytest_cache/
-backend/.mypy_cache/
-frontend/node_modules/
-
-# Python
+venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-*.tmp
-
-# Environment
-.env
-.env.local
-.env.*
-
-# Docker
-Dockerfile
-docker-compose.yml
+node_modules/
+pip-wheel-metadata/
 
 # Build artifacts
 dist/
 build/
 *.egg-info/
-target/
+.installed.cfg
+*.egg
 
-# Editors
+# Environment variables
+.env
+.env.local
+.env.*
+
+# Logs
+*.log
+celerybeat-schedule
+celerybeat.pid
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.cache
+.pytest_cache/
+.hypothesis/
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-Thumbs.db
+*~
+
+# Alembic
+alembic/versions/*.py
+
+# Frontend
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.swp
+*~
 .DS_Store
-
-# Logs
-*.log
-
-# Coverage
-coverage/
-htmlcov/
 ```
