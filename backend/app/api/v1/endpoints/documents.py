@@ -1,125 +1,176 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from sqlmodel import Session, select
+"""
+Endpoints para generación de documentos y gestión de correspondencia
+"""
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.core.database import get_session
-from app.core.dependencies import get_current_active_user
-from app.models.document import DocumentTemplate, GeneratedDocument, TemplateType
+import os
+import shutil
+
+from app.db.session import get_db
+from app.services.auth_service import get_current_user
 from app.models.user import User
-from app.schemas.document import DocumentTemplateResponse, DocumentTemplateCreate, GeneratedDocumentResponse
+from app.models.document import DocumentTemplate, GeneratedDocument
+from app.schemas.document import (
+    DocumentTemplateCreate, 
+    DocumentTemplateResponse, 
+    DocumentGenerationRequest,
+    BatchGenerationRequest
+)
+from app.services.document_service import DocumentGenerationService
 
 router = APIRouter()
 
+UPLOAD_DIR = "app/uploads/templates"
+OUTPUT_DIR = "app/uploads/generated"
 
-@router.get("/templates/", response_model=List[DocumentTemplateResponse])
-async def get_templates(
+# Asegurar directorios
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+@router.get("/templates", response_model=List[DocumentTemplateResponse])
+def get_templates(
     skip: int = 0,
     limit: int = 100,
-    is_active: bool = True,
-    current_user: User = Depends(get_current_active_user),
-    session: Session = Depends(get_session)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Obtener plantillas documentales del tenant."""
-    statement = select(DocumentTemplate).where(
+    """Obtener plantillas del tenant"""
+    templates = db.query(DocumentTemplate).filter(
         DocumentTemplate.tenant_id == current_user.tenant_id,
-        DocumentTemplate.is_active == is_active
-    )
-    templates = session.exec(statement.offset(skip).limit(limit)).all()
+        DocumentTemplate.is_active == True
+    ).offset(skip).limit(limit).all()
     return templates
 
-
-@router.get("/templates/{template_id}", response_model=DocumentTemplateResponse)
-async def get_template(
-    template_id: int,
-    current_user: User = Depends(get_current_active_user),
-    session: Session = Depends(get_session)
-):
-    """Obtener una plantilla específica."""
-    template = session.get(DocumentTemplate, template_id)
-    if not template or template.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
-    return template
-
-
-@router.post("/templates/", response_model=DocumentTemplateResponse)
-async def create_template(
-    name: str,
-    code: str,
-    description: Optional[str] = None,
-    template_type: TemplateType = TemplateType.DOCX,
+@router.post("/templates", response_model=DocumentTemplateResponse)
+def create_template(
+    name: str = Form(...),
+    code: str = Form(...),
+    description: Optional[str] = Form(None),
+    variables_schema: str = Form("{}"),
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_active_user),
-    session: Session = Depends(get_session)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Crear una nueva plantilla documental."""
-    # Verificar código único
-    statement = select(DocumentTemplate).where(
+    """Subir nueva plantilla documental"""
+    # Validar unicidad de código
+    existing = db.query(DocumentTemplate).filter(
         DocumentTemplate.code == code,
         DocumentTemplate.tenant_id == current_user.tenant_id
-    )
-    existing = session.exec(statement).first()
+    ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Ya existe una plantilla con este código")
+        raise HTTPException(status_code=400, detail="El código de plantilla ya existe")
     
-    content = await file.read()
+    # Guardar archivo
+    file_path = os.path.join(UPLOAD_DIR, f"{current_user.tenant_id}_{file.filename}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
     
+    # Crear registro
     template = DocumentTemplate(
         name=name,
         code=code,
         description=description,
-        template_type=template_type,
+        file_path=file_path,
+        variables_schema=variables_schema,
         tenant_id=current_user.tenant_id,
-        content=content,
-        variables_schema={},
-        version=1,
-        is_active=True
+        version=1
     )
-    
-    session.add(template)
-    session.commit()
-    session.refresh(template)
+    db.add(template)
+    db.commit()
+    db.refresh(template)
     return template
 
-
-@router.post("/generate/")
-async def generate_document(
-    template_id: int,
-    variables: dict,
-    current_user: User = Depends(get_current_active_user),
-    session: Session = Depends(get_session)
+@router.post("/generate")
+def generate_document(
+    request: DocumentGenerationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Generar documento desde plantilla."""
-    from app.services.document_service import generate_document_from_template
-    
-    template = session.get(DocumentTemplate, template_id)
-    if not template or template.tenant_id != current_user.tenant_id:
+    """Generar un documento individual"""
+    template = db.query(DocumentTemplate).filter(
+        DocumentTemplate.id == request.template_id,
+        DocumentTemplate.tenant_id == current_user.tenant_id
+    ).first()
+    if not template:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
     
-    result = await generate_document_from_template(
-        template=template,
-        variables=variables,
-        tenant_id=current_user.tenant_id,
-        user_id=current_user.id,
-        session=session
-    )
+    output_filename = f"doc_{request.process_id}_{template.code}.pdf"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
     
-    return result
+    try:
+        # Generar documento
+        DocumentGenerationService.render_template(
+            template.file_path, 
+            request.variables, 
+            output_path.replace(".pdf", ".docx") # Temporal DOCX
+        )
+        
+        # Convertir a PDF
+        DocumentGenerationService.convert_to_pdf(
+            output_path.replace(".pdf", ".docx"),
+            output_path
+        )
+        
+        # Registrar en BD
+        doc_record = GeneratedDocument(
+            process_id=request.process_id,
+            template_id=template.id,
+            file_path=output_path,
+            generated_by=current_user.id,
+            tenant_id=current_user.tenant_id
+        )
+        db.add(doc_record)
+        db.commit()
+        
+        return {"message": "Documento generado", "path": output_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.get("/generated/", response_model=List[GeneratedDocumentResponse])
-async def get_generated_documents(
-    skip: int = 0,
-    limit: int = 100,
-    process_id: Optional[int] = None,
-    current_user: User = Depends(get_current_active_user),
-    session: Session = Depends(get_session)
+@router.post("/generate/batch")
+def generate_batch_documents(
+    request: BatchGenerationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Obtener documentos generados."""
-    statement = select(GeneratedDocument).where(
-        GeneratedDocument.tenant_id == current_user.tenant_id
-    )
+    """Generar lote masivo de documentos"""
+    template = db.query(DocumentTemplate).filter(
+        DocumentTemplate.id == request.template_id,
+        DocumentTemplate.tenant_id == current_user.tenant_id
+    ).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
     
-    if process_id:
-        statement = statement.where(GeneratedDocument.process_id == process_id)
+    # Obtener datos de los procesos
+    from app.models.process import CollectionProcess
+    processes = db.query(CollectionProcess).filter(
+        CollectionProcess.id.in_(request.process_ids),
+        CollectionProcess.tenant_id == current_user.tenant_id
+    ).all()
     
-    documents = session.exec(statement.offset(skip).limit(limit)).all()
-    return documents
+    if len(processes) != len(request.process_ids):
+        raise HTTPException(status_code=400, detail="Algunos procesos no existen o no pertenecen al tenant")
+    
+    # Preparar datos para generación
+    proc_data = []
+    for p in processes:
+        proc_data.append({
+            'cliente_nombre': p.client.name if p.client else 'N/A',
+            'cliente_identificacion': p.client.identification if p.client else 'N/A',
+            'obligacion_numero': p.obligation.number if p.obligation else 'N/A',
+            'valor_total': p.obligation.total_amount if p.obligation else 0,
+            'radicado': p.radicado_number or 'PENDIENTE',
+            'resolucion': p.resolution_number or 'PENDIENTE',
+            'fecha_emision': p.created_at.strftime('%Y-%m-%d'),
+            'entidad_nombre': current_user.tenant.name
+        })
+    
+    try:
+        zip_path = DocumentGenerationService.generate_batch(
+            templates=[{'path': template.file_path}],
+            processes=proc_data,
+            output_dir=OUTPUT_DIR
+        )
+        return {"message": f"Lote generado: {len(processes)} documentos", "zip_path": zip_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -6,6 +6,8 @@ from app.models.process import CobroProcess, ProcessHistory, ProcessStatus
 from app.models.document import DocumentTemplate, GeneratedDocument, TemplateType
 from app.models.import_template import ImportTemplate
 from app.models.task import Task, TaskStatus, TaskPriority
+from app.models.import_map import ImportMappingTemplate
+from app.models.import_batch import ImportBatch, ImportStatus
 
 __all__ = [
     "Tenant",
@@ -27,4 +29,7 @@ __all__ = [
     "Task",
     "TaskStatus",
     "TaskPriority",
+    "ImportMappingTemplate",
+    "ImportBatch",
+    "ImportStatus",
 ]
