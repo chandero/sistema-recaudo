@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: cartera_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-cartera_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cartera_pass}
+      POSTGRES_DB: ${DB_NAME:-cartera_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - cartera_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cartera_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cartera_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - cartera_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cartera_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-cartera_user}:${DB_PASSWORD:-cartera_pass}@db:5432/${DB_NAME:-cartera_db}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-supersecretkeychangeinproduction}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cartera_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cartera_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - cartera_network
+
+volumes:
+  postgres_data:
+
+networks:
+  cartera_network:
+    driver: bridge
