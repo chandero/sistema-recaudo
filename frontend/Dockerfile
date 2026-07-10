@@ -7,6 +7,9 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
+# Replace dev index.html with production template
+COPY index.prod.html index.html
+RUN rm -f index.prod.html
 RUN npm run build
 
 # Production stage

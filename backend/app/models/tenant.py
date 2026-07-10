@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from app.models.workflow import WorkflowState
     from app.models.document import DocumentTemplate
     from app.models.import_template import ImportTemplate
+    from app.models.import_batch import ImportBatch
+    from app.models.import_map import ImportMappingTemplate
 
 
 class TenantBase(SQLModel):
@@ -31,3 +33,5 @@ class Tenant(TenantBase, table=True):
     workflow_states: List["WorkflowState"] = Relationship(back_populates="tenant")
     document_templates: List["DocumentTemplate"] = Relationship(back_populates="tenant")
     import_templates: List["ImportTemplate"] = Relationship(back_populates="tenant")
+    import_batches: List["ImportBatch"] = Relationship(back_populates="tenant")
+    import_mapping_templates: List["ImportMappingTemplate"] = Relationship(back_populates="tenant")

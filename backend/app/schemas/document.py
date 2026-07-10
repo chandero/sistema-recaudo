@@ -1,7 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, Dict
+from pydantic import BaseModel, validator
+from typing import Optional, Dict, List, Any, Union
 from datetime import datetime
 from enum import Enum
+import json
 
 
 class TemplateType(str, Enum):
@@ -16,11 +17,24 @@ class DocumentTemplateBase(BaseModel):
     description: Optional[str] = None
     version: int = 1
     is_active: bool = True
-    variables_schema: Optional[Dict] = None
+    variables_schema: Optional[Union[str, Dict[str, Any]]] = None
+    
+    @validator('variables_schema', pre=True, always=True)
+    def normalize_variables_schema(cls, v):
+        if v is None:
+            return {}
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        if isinstance(v, dict):
+            return v
+        return {}
 
 
 class DocumentTemplateCreate(DocumentTemplateBase):
-    content: bytes
+    content: Optional[bytes] = None
 
 
 class DocumentTemplateUpdate(BaseModel):
@@ -30,7 +44,7 @@ class DocumentTemplateUpdate(BaseModel):
     description: Optional[str] = None
     version: Optional[int] = None
     is_active: Optional[bool] = None
-    variables_schema: Optional[Dict] = None
+    variables_schema: Optional[Union[str, Dict[str, Any]]] = None
 
 
 class DocumentTemplateResponse(DocumentTemplateBase):
@@ -41,6 +55,9 @@ class DocumentTemplateResponse(DocumentTemplateBase):
     
     class Config:
         from_attributes = True
+        json_encoders = {
+            dict: lambda v: json.dumps(v) if isinstance(v, dict) else v
+        }
 
 
 class GeneratedDocumentBase(BaseModel):
@@ -71,6 +88,20 @@ class GeneratedDocumentResponse(GeneratedDocumentBase):
     file_size: int
     created_by: Optional[int] = None
     created_at: datetime
+    is_sent: bool = False
+    sent_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
+
+
+# Request schemas for document generation
+class DocumentGenerationRequest(BaseModel):
+    template_id: int
+    process_id: int
+    variables: Dict[str, str]
+
+
+class BatchGenerationRequest(BaseModel):
+    template_id: int
+    process_ids: List[int]

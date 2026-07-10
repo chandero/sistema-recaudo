@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from app.models.tenant import Tenant
     from app.models.workflow import WorkflowState
     from app.models.user import User
+    from app.models.client import Client, Obligation
 
 
 class ProcessStatus(str, Enum):
@@ -34,12 +35,15 @@ class CobroProcess(CobroProcessBase, table=True):
     
     tenant: Optional["Tenant"] = Relationship(back_populates="processes")
     current_state: Optional["WorkflowState"] = Relationship()
+    history: List["ProcessHistory"] = Relationship(back_populates="process")
+    obligations: List["Obligation"] = Relationship(back_populates="process")
 
 
 class ProcessHistory(SQLModel, table=True):
     __tablename__ = "process_history"
     
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(..., foreign_key="tenants.id", index=True)
     process_id: int = Field(..., foreign_key="cobro_processes.id", index=True)
     user_id: Optional[int] = Field(default=None, foreign_key="users.id")
     previous_state_id: Optional[int] = Field(default=None, foreign_key="workflow_states.id")
@@ -51,5 +55,5 @@ class ProcessHistory(SQLModel, table=True):
     
     process: Optional["CobroProcess"] = Relationship(back_populates="history")
     user: Optional["User"] = Relationship()
-    previous_state: Optional["WorkflowState"] = Relationship()
-    new_state: Optional["WorkflowState"] = Relationship()
+    # previous_state: Optional["WorkflowState"] = Relationship()  # TODO: Especificar foreign_keys
+    # new_state: Optional["WorkflowState"] = Relationship()  # TODO: Especificar foreign_keys

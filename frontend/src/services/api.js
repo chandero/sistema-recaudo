@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 // Crear instancia de axios
 const apiClient = axios.create({
@@ -16,6 +16,8 @@ apiClient.interceptors.request.use(
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    } else {
+      console.warn('No access_token found in localStorage for request:', config.url)
     }
     return config
   },
@@ -40,11 +42,17 @@ apiClient.interceptors.response.use(
 
 // Servicio de autenticación
 export const authService = {
-  async login(email, password) {
-    const response = await apiClient.post('/auth/login', { email, password })
+  async login(username, password) {
+    // El backend ahora espera JSON
+    const response = await apiClient.post('/auth/login', {
+      username,
+      password
+    })
     if (response.data.access_token) {
       localStorage.setItem('access_token', response.data.access_token)
       localStorage.setItem('user_role', response.data.user?.role || 'user')
+      // Also set token in memory for immediate use
+      apiClient.defaults.headers.common['Authorization'] = `Bearer ${response.data.access_token}`
     }
     return response.data
   },
@@ -181,26 +189,26 @@ export const processService = {
 // Servicio de workflow
 export const workflowService = {
   getStates() {
-    return apiClient.get('/workflow/states/')
+    return apiClient.get('/workflows/states/')
   },
 
   getTransitions() {
-    return apiClient.get('/workflow/transitions/')
+    return apiClient.get('/workflows/transitions/')
   },
 
   createState(data) {
-    return apiClient.post('/workflow/states/', data)
+    return apiClient.post('/workflows/states/', data)
   },
 
   createTransition(data) {
-    return apiClient.post('/workflow/transitions/', data)
+    return apiClient.post('/workflows/transitions/', data)
   }
 }
 
 // Servicio de documentos
 export const documentService = {
   getTemplates(params = {}) {
-    return apiClient.get('/documents/templates/', { params })
+    return apiClient.get('/documents/templates', { params })
   },
 
   getTemplateById(id) {
@@ -208,15 +216,15 @@ export const documentService = {
   },
 
   createTemplate(data) {
-    return apiClient.post('/documents/templates/', data)
+    return apiClient.post('/documents/templates', data)
   },
 
   generateDocument(templateId, variables) {
-    return apiClient.post(`/documents/templates/${templateId}/generate`, variables)
+    return apiClient.post(`/documents/generate`, { template_id: templateId, ...variables })
   },
 
   getGeneratedDocuments(params = {}) {
-    return apiClient.get('/documents/generated/', { params })
+    return apiClient.get('/documents/generated', { params })
   }
 }
 

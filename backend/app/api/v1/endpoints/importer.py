@@ -1,20 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlmodel import Session, select
 from typing import List, Optional
 import pandas as pd
 import json
 import os
 from datetime import datetime
 
-from app.db.session import get_db
-from app.core.security import get_current_user
+from app.core.database import get_session
+from app.core.dependencies import get_current_active_user
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.models.import_map import ImportMappingTemplate
 from app.models.import_batch import ImportBatch, ImportStatus
 from app.schemas.import_map import ImportMappingCreate, ImportMappingResponse, ImportMappingUpdate
 from app.schemas.import_batch import ImportBatchCreate, ImportBatchResponse, ImportBatchStatusResponse
-from app.services.import_service import ImportService
+from app.services import import_service
 
 router = APIRouter()
 
@@ -26,10 +26,11 @@ STANDARD_FIELDS = {
     ],
     "obligacion": [
         "numero_obligacion", "vigencia", "valor_total", "capital", 
-        "intereses", "multas", "fecha_emision", "fecha_vencimiento",
+        "intereses", "mora", "fecha_emision", "fecha_vencimiento",
         "concepto", "estado"
     ]
 }
+
 
 @router.get("/standard-fields", response_model=dict)
 def get_standard_fields():
@@ -40,16 +41,12 @@ def get_standard_fields():
 @router.post("/mapping-templates", response_model=ImportMappingResponse)
 def create_mapping_template(
     template: ImportMappingCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Crea una nueva plantilla de mapeo de columnas"""
-    tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant no encontrado")
-    
     # Validar que el mapping solo contenga campos válidos
-    for source_col, target_field in template.mapping_config.items():
+    for target_field in template.mapping_config.values():
         valid_fields = STANDARD_FIELDS["cliente"] + STANDARD_FIELDS["obligacion"]
         if target_field not in valid_fields:
             raise HTTPException(
@@ -66,9 +63,9 @@ def create_mapping_template(
         is_active=True
     )
     
-    db.add(db_template)
-    db.commit()
-    db.refresh(db_template)
+    session.add(db_template)
+    session.commit()
+    session.refresh(db_template)
     
     return db_template
 
@@ -78,32 +75,34 @@ def list_mapping_templates(
     skip: int = 0,
     limit: int = 100,
     active_only: bool = True,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Lista las plantillas de mapeo del tenant"""
-    query = db.query(ImportMappingTemplate).filter(
+    statement = select(ImportMappingTemplate).where(
         ImportMappingTemplate.tenant_id == current_user.tenant_id
     )
     
     if active_only:
-        query = query.filter(ImportMappingTemplate.is_active == True)
+        statement = statement.where(ImportMappingTemplate.is_active == True)
     
-    templates = query.offset(skip).limit(limit).all()
+    statement = statement.offset(skip).limit(limit)
+    templates = session.exec(statement).all()
     return templates
 
 
 @router.get("/mapping-templates/{template_id}", response_model=ImportMappingResponse)
 def get_mapping_template(
     template_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Obtiene una plantilla de mapeo específica"""
-    template = db.query(ImportMappingTemplate).filter(
+    statement = select(ImportMappingTemplate).where(
         ImportMappingTemplate.id == template_id,
         ImportMappingTemplate.tenant_id == current_user.tenant_id
-    ).first()
+    )
+    template = session.exec(statement).first()
     
     if not template:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
@@ -115,45 +114,49 @@ def get_mapping_template(
 def update_mapping_template(
     template_id: int,
     template_update: ImportMappingUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Actualiza una plantilla de mapeo"""
-    template = db.query(ImportMappingTemplate).filter(
+    statement = select(ImportMappingTemplate).where(
         ImportMappingTemplate.id == template_id,
         ImportMappingTemplate.tenant_id == current_user.tenant_id
-    ).first()
+    )
+    template = session.exec(statement).first()
     
     if not template:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
     
-    update_data = template_update.dict(exclude_unset=True)
+    update_data = template_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(template, field, value)
     
-    db.commit()
-    db.refresh(template)
+    session.add(template)
+    session.commit()
+    session.refresh(template)
     return template
 
 
 @router.delete("/mapping-templates/{template_id}")
 def delete_mapping_template(
     template_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Elimina (desactiva) una plantilla de mapeo"""
-    template = db.query(ImportMappingTemplate).filter(
+    statement = select(ImportMappingTemplate).where(
         ImportMappingTemplate.id == template_id,
         ImportMappingTemplate.tenant_id == current_user.tenant_id
-    ).first()
+    )
+    template = session.exec(statement).first()
     
     if not template:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
     
     # Soft delete
     template.is_active = False
-    db.commit()
+    session.add(template)
+    session.commit()
     
     return {"message": "Plantilla desactivada exitosamente"}
 
@@ -163,8 +166,8 @@ async def upload_file(
     file: UploadFile = File(...),
     template_id: Optional[int] = Form(None),
     background_tasks: BackgroundTasks = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Sube un archivo Excel/CSV y crea un lote de importación"""
     # Validar extensión
@@ -221,17 +224,9 @@ async def upload_file(
         }
     )
     
-    db.add(db_batch)
-    db.commit()
-    db.refresh(db_batch)
-    
-    # Si hay plantilla, iniciar procesamiento en background
-    if template_id and background_tasks:
-        background_tasks.add_task(
-            ImportService.process_import,
-            db_batch.id,
-            current_user.tenant_id
-        )
+    session.add(db_batch)
+    session.commit()
+    session.refresh(db_batch)
     
     # Retornar columnas detectadas para mapeo
     result = ImportBatchResponse.from_orm(db_batch)
@@ -246,14 +241,15 @@ def map_and_process_batch(
     mapping: dict,
     save_as_template: bool = False,
     template_name: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Aplica mapeo manual y procesa el lote"""
-    batch = db.query(ImportBatch).filter(
+    statement = select(ImportBatch).where(
         ImportBatch.id == batch_id,
         ImportBatch.tenant_id == current_user.tenant_id
-    ).first()
+    )
+    batch = session.exec(statement).first()
     
     if not batch:
         raise HTTPException(status_code=404, detail="Lote no encontrado")
@@ -285,50 +281,55 @@ def map_and_process_batch(
             supported_fields=list(mapping.values()),
             is_active=True
         )
-        db.add(new_template)
+        session.add(new_template)
         batch.mapping_template_id = new_template.id
     
     # Cambiar estado y procesar
     batch.status = ImportStatus.PROCESSING
-    db.commit()
+    session.add(batch)
+    session.commit()
+    session.refresh(batch)
     
-    # Procesar en background
-    ImportService.process_import(batch_id, current_user.tenant_id)
+    # TODO: Implementar procesamiento en background (Fase 2)
+    # if background_tasks:
+    #     background_tasks.add_task(import_service.process_import_file, batch_id, current_user.tenant_id)
     
-    return {"message": "Procesamiento iniciado", "batch_id": batch_id}
+    return {"message": "Procesamiento iniciado (pendiente implementación completa)", "batch_id": batch_id}
 
 
 @router.get("/batches", response_model=List[ImportBatchResponse])
 def list_import_batches(
     skip: int = 0,
     limit: int = 100,
-    status: Optional[ImportStatus] = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    status_filter: Optional[ImportStatus] = None,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Lista los lotes de importación del tenant"""
-    query = db.query(ImportBatch).filter(
+    statement = select(ImportBatch).where(
         ImportBatch.tenant_id == current_user.tenant_id
     )
     
-    if status:
-        query = query.filter(ImportBatch.status == status)
+    if status_filter:
+        statement = statement.where(ImportBatch.status == status_filter)
     
-    batches = query.order_by(ImportBatch.created_at.desc()).offset(skip).limit(limit).all()
+    statement = statement.offset(skip).limit(limit).order_by(ImportBatch.created_at.desc())
+    batches = session.exec(statement).all()
     return batches
 
 
 @router.get("/batches/{batch_id}", response_model=ImportBatchResponse)
 def get_import_batch(
     batch_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Obtiene detalles de un lote de importación"""
-    batch = db.query(ImportBatch).filter(
+    statement = select(ImportBatch).where(
         ImportBatch.id == batch_id,
         ImportBatch.tenant_id == current_user.tenant_id
-    ).first()
+    )
+    batch = session.exec(statement).first()
     
     if not batch:
         raise HTTPException(status_code=404, detail="Lote no encontrado")
@@ -339,14 +340,15 @@ def get_import_batch(
 @router.get("/batches/{batch_id}/status", response_model=ImportBatchStatusResponse)
 def get_batch_status(
     batch_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Obtiene el estado actual del procesamiento del lote"""
-    batch = db.query(ImportBatch).filter(
+    statement = select(ImportBatch).where(
         ImportBatch.id == batch_id,
         ImportBatch.tenant_id == current_user.tenant_id
-    ).first()
+    )
+    batch = session.exec(statement).first()
     
     if not batch:
         raise HTTPException(status_code=404, detail="Lote no encontrado")

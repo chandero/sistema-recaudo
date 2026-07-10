@@ -5,8 +5,10 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
-    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
+
+# Crear directorio para la base de datos
+RUN mkdir -p /opt/riap/db
 
 # Copy requirements first for better caching
 COPY requirements.txt .

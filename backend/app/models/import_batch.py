@@ -1,10 +1,10 @@
-from sqlalchemy import Column, Integer, String, JSON, ForeignKey, DateTime, Enum as SQLEnum
-from sqlalchemy.orm import relationship
-from app.db.base_class import Base
-import enum
+from sqlmodel import SQLModel, Field, Relationship, Column, JSON
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+from enum import Enum
 
-class ImportStatus(str, enum.Enum):
+
+class ImportStatus(str, Enum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
     MAPPING = "MAPPING"  # Esperando mapeo del usuario
@@ -13,46 +13,32 @@ class ImportStatus(str, enum.Enum):
     FAILED = "FAILED"
     PARTIAL = "PARTIAL"  # Completado con errores
 
-class ImportBatch(Base):
-    """Lote de importación de clientes/obligaciones desde Excel/CSV"""
+
+class ImportBatchBase(SQLModel):
+    total_rows: int = Field(default=0)
+    processed_rows: int = Field(default=0)
+    success_rows: int = Field(default=0)
+    error_rows: int = Field(default=0)
+    status: ImportStatus = Field(default=ImportStatus.PENDING)
+    mapping_template_id: Optional[int] = Field(default=None)
+    import_options: Dict[str, Any] = Field(default={}, sa_column=Column("import_options", JSON))
+    errors_log: List[Dict[str, Any]] = Field(default=[], sa_column=Column("errors_log", JSON))
+    completed_at: Optional[datetime] = Field(default=None)
+
+
+class ImportBatch(ImportBatchBase, table=True):
     __tablename__ = "import_batches"
 
-    id = Column(Integer, primary_key=True, index=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
-    filename = Column(String, nullable=False)
-    original_filename = Column(String, nullable=False)
-    file_path = Column(String, nullable=True)  # Ruta temporal del archivo
-    
-    total_rows = Column(Integer, default=0)
-    processed_rows = Column(Integer, default=0)
-    success_rows = Column(Integer, default=0)
-    error_rows = Column(Integer, default=0)
-    
-    status = Column(SQLEnum(ImportStatus), default=ImportStatus.PENDING)
-    
-    # Mapeo usado (referencia a plantilla o mapeo manual)
-    mapping_template_id = Column(Integer, ForeignKey("import_mapping_templates.id"), nullable=True)
-    custom_mapping = Column(JSON, nullable=True)  # Si no usa plantilla
-    
-    # Configuración de importación
-    import_options = Column(JSON, default={
-        "skip_header": True,
-        "delimiter": ",",
-        "encoding": "utf-8",
-        "update_duplicates": False,
-        "create_clients": True,
-        "create_obligations": True
-    })
-    
-    # Errores detallados
-    errors_log = Column(JSON, default=list)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(..., foreign_key="tenants.id", index=True)
+    user_id: int = Field(..., foreign_key="users.id", index=True)
+    filename: str = Field(...)
+    original_filename: str = Field(...)
+    file_path: Optional[str] = Field(default=None)
+    custom_mapping: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column("custom_mapping", JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relaciones
-    tenant = relationship("Tenant", back_populates="import_batches")
-    user = relationship("User", back_populates="import_batches")
-    mapping_template = relationship("ImportMappingTemplate", back_populates="batches")
+    tenant: Optional["Tenant"] = Relationship(back_populates="import_batches")
+    user: Optional["User"] = Relationship(back_populates="import_batches")
+    # mapping_template: Optional["ImportMappingTemplate"] = Relationship(back_populates="batches")  # TODO: Corregir foreign_key

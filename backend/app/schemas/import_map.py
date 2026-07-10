@@ -48,6 +48,9 @@ class ImportBatchResponse(ImportBatchBase):
     created_at: datetime
     completed_at: Optional[datetime] = None
     detected_columns: Optional[List[str]] = None  # Solo para respuesta después de upload
+    import_options: Optional[Dict[str, Any]] = None
+    errors_log: Optional[List[Dict[str, Any]]] = None
+    file_path: Optional[str] = None
     
     class Config:
         from_attributes = True

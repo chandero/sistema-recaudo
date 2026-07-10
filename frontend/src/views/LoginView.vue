@@ -9,14 +9,15 @@
 
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="field">
-          <label for="email">Correo electrónico</label>
+          <label for="username">Usuario</label>
           <InputText 
-            id="email" 
-            v-model="email" 
-            type="email" 
-            placeholder="usuario@ejemplo.com"
+            id="username" 
+            v-model="username" 
+            type="text" 
+            placeholder="Ingrese su usuario"
             class="w-full"
             :disabled="loading"
+            @input="clearError"
           />
         </div>
 
@@ -29,6 +30,7 @@
             toggleMask
             class="w-full"
             :disabled="loading"
+            @input="clearError"
           />
         </div>
 
@@ -42,7 +44,7 @@
           icon="pi pi-sign-in"
           class="w-full mt-4"
           :loading="loading"
-          :disabled="!email || !password"
+          :disabled="!username || !password"
         />
       </form>
 
@@ -56,23 +58,34 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const email = ref('')
+const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
+
+// Clear any existing session data when login page loads
+onMounted(() => {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('user_role')
+  authStore.clearToken()
+})
+
+const clearError = () => {
+  error.value = ''
+}
 
 const handleLogin = async () => {
   loading.value = true
   error.value = ''
 
-  const result = await authStore.login(email.value, password.value)
+  const result = await authStore.login(username.value, password.value)
 
   if (result.success) {
     router.push('/')

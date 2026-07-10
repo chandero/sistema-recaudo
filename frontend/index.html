@@ -5,13 +5,22 @@
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Gestión de Cartera</title>
-    <!-- PrimeVue Styles -->
+    <!-- PrimeVue 3.x Styles - will be loaded from CDN in dev, bundled in prod -->
     <link rel="stylesheet" href="https://unpkg.com/primevue@3.45.0/resources/themes/lara-light-indigo/theme.css" />
     <link rel="stylesheet" href="https://unpkg.com/primevue@3.45.0/resources/primevue.min.css" />
-    <link rel="stylesheet" href="https://unpkg.com/primeicons/primeicons.css" />
+    <link rel="stylesheet" href="https://unpkg.com/primeicons@6.0.1/primeicons.css" />
+    <link rel="stylesheet" href="https://unpkg.com/primeflex@3.3.0/primeflex.min.css" />
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" crossorigin src="/src/main.js"></script>
+    <script>
+      // Fallback message if JS fails
+      setTimeout(function() {
+        if (!document.getElementById('app').innerHTML || document.getElementById('app').innerHTML.trim() === '<div id="app"></div>') {
+          document.body.innerHTML = '<div style="padding: 40px; text-align: center; font-family: sans-serif;"><h1>Cargando...</h1><p>Si no carga, recarga con Ctrl+F5</p></div>';
+        }
+      }, 2000);
+    </script>
   </body>
 </html>

@@ -31,7 +31,7 @@
     </div>
 
     <!-- Sidebar -->
-    <Drawer v-model:visible="sidebarVisible" position="left" class="sidebar">
+    <Sidebar v-model:visible="sidebarVisible" position="left" class="sidebar">
       <Menu :model="menuItems" class="w-full border-none">
         <template #item="{ item, props }">
           <a v-ripple class="flex align-items-center menu-item" v-bind="props.action">
@@ -41,7 +41,7 @@
           </a>
         </template>
       </Menu>
-    </Drawer>
+    </Sidebar>
 
     <!-- Main Content -->
     <div class="main-content">
@@ -114,8 +114,7 @@ const menuItems = ref([
   {
     label: 'Administración',
     icon: 'pi pi-cog',
-    command: () => router.push('/admin'),
-    visible: computed(() => authStore.isPlatformAdmin)
+    command: () => router.push('/admin')
   }
 ])
 

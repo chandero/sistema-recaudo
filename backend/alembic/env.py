@@ -9,8 +9,8 @@ from alembic import context
 import sys
 sys.path.append('.')
 
-from app.core.database import Base
-from app.models import tenant, user, client, workflow, process, document, task, import_template
+from sqlmodel import SQLModel
+from app.models import tenant, user, client, workflow, process, document, task, import_template, import_batch, import_map
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -23,7 +23,7 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-target_metadata = Base.metadata
+target_metadata = SQLModel.metadata
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""

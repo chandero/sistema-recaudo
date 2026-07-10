@@ -46,4 +46,5 @@ class Task(TaskBase, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     tenant: Optional["Tenant"] = Relationship()
-    assigned_user: Optional["User"] = Relationship(back_populates="assigned_tasks")
+    # assigned_user: Optional["User"] = Relationship()  # TODO: Especificar foreign_keys correctamente
+    process: Optional["CobroProcess"] = Relationship()

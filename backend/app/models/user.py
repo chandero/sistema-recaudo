@@ -6,6 +6,7 @@ from enum import Enum
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
     from app.models.task import Task
+    from app.models.import_batch import ImportBatch
 
 
 class UserRole(str, Enum):
@@ -35,8 +36,9 @@ class User(UserBase, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     tenant: Optional["Tenant"] = Relationship(back_populates="users")
-    permissions: List["Permission"] = Relationship(back_populates="users")
-    assigned_tasks: List["Task"] = Relationship(back_populates="assigned_user")
+    # permissions: List["Permission"] = Relationship(back_populates="users")  # TODO: Implementar tabla intermedia para many-to-many
+    # assigned_tasks: List["Task"] = Relationship(back_populates="assigned_user")  # TODO: Corregir foreign_keys
+    import_batches: List["ImportBatch"] = Relationship(back_populates="user")
 
 
 class PermissionBase(SQLModel):
@@ -52,4 +54,4 @@ class Permission(PermissionBase, table=True):
     tenant_id: Optional[int] = Field(default=None, foreign_key="tenants.id", nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    users: List["User"] = Relationship(back_populates="permissions")
+    # users: List["User"] = Relationship(back_populates="permissions")  # TODO: Implementar tabla intermedia para many-to-many

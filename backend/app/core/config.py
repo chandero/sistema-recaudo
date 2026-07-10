@@ -9,7 +9,11 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
     
-    # Database
+    # Database - SQLite para desarrollo
+    DB_PATH: str = "/opt/riap/db/cartera.db"
+    USE_SQLITE: bool = True  # Cambiar a False para usar PostgreSQL
+    
+    # PostgreSQL (solo si USE_SQLITE=False)
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_HOST: str = "localhost"
@@ -18,14 +22,18 @@ class Settings(BaseSettings):
     
     @property
     def DATABASE_URL(self) -> str:
+        if self.USE_SQLITE:
+            return f"sqlite:///{self.DB_PATH}"
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
     
     @property
     def ASYNC_DATABASE_URL(self) -> str:
+        if self.USE_SQLITE:
+            return f"sqlite+aiosqlite:///{self.DB_PATH}"
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
     
     # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production-min-32-chars"
+    SECRET_KEY: str = os.environ.get("SECRET_KEY", "dev-change-in-production-min-32-chars")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -37,7 +45,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
     
     # CORS
-    CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:8080"]
+    CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:8080", "http://localhost:5173"]
     
     class Config:
         env_file = ".env"

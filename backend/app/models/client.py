@@ -4,6 +4,7 @@ from datetime import datetime
 
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
+    from app.models.process import CobroProcess
 
 
 class ClientBase(SQLModel):
@@ -53,3 +54,4 @@ class Obligation(ObligationBase, table=True):
     
     tenant: Optional["Tenant"] = Relationship(back_populates="obligations")
     client: Optional["Client"] = Relationship(back_populates="obligations")
+    process: Optional["CobroProcess"] = Relationship(back_populates="obligations")

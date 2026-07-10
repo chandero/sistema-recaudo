@@ -1,292 +1,497 @@
-"""
-Vista para generación de documentos y gestión de plantillas
-Permite subir plantillas DOCX, generar documentos individuales o masivos
-"""
-<template>
-  <div class="p-4">
-    <h2 class="text-2xl font-bold mb-4 text-gray-800">Gestión Documental</h2>
+de <template>
+  <div class="documentos">
+    <PageHeader 
+      title="Gestión de Documentos" 
+      subtitle="Administra los documentos asociados a los procesos de recaudo"
+    >
+      <template #actions>
+        <Button 
+          label="Subir Documento" 
+          icon="pi pi-upload" 
+          @click="openUploadDialog"
+        />
+        <Button 
+          label="Generar Documento" 
+          icon="pi pi-file" 
+          severity="secondary" 
+          @click="openDocumentGenerator"
+        />
+      </template>
+    </PageHeader>
 
-    <!-- Pestañas -->
-    <TabView>
-      <TabPanel header="Plantillas">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Plantillas Disponibles</h3>
-          <Button label="Nueva Plantilla" icon="pi pi-plus" @click="showNewTemplateDialog = true" />
-        </div>
+    <DataTableWrapper
+      :value="documents"
+      :columns="tableColumns"
+      :loading="loading"
+      @refresh="loadDocuments"
+      @search-change="onSearchChange"
+      :filter-fields="['name', 'type', 'clientName']"
+    >
+      <template #actions>
+        <Button 
+          label="Exportar" 
+          icon="pi pi-download" 
+          severity="secondary" 
+          outlined
+        />
+      </template>
+      
+      <template #column-type="slotProps">
+        <Tag 
+          :value="getTypeLabel(slotProps.fieldData)" 
+          :severity="getTypeSeverity(slotProps.fieldData)" 
+        />
+      </template>
+      
+      <template #column-status="slotProps">
+        <Tag 
+          :value="getStatusLabel(slotProps.fieldData)" 
+          :severity="getStatusSeverity(slotProps.fieldData)" 
+        />
+      </template>
+      
+      <template #column-actions="slotProps">
+        <Button 
+          icon="pi pi-eye" 
+          text 
+          severity="info" 
+          @click="viewDocument(slotProps.rowData)"
+          v-tooltip="'Ver documento'"
+        />
+        <Button 
+          icon="pi pi-download" 
+          text 
+          severity="success" 
+          @click="downloadDocument(slotProps.rowData)"
+          v-tooltip="'Descargar'"
+        />
+        <Button 
+          icon="pi pi-print" 
+          text 
+          severity="secondary" 
+          @click="printDocument(slotProps.rowData)"
+          v-tooltip="'Imprimir'"
+        />
+        <Button 
+          icon="pi pi-trash" 
+          text 
+          severity="danger" 
+          @click="confirmDeleteDocument(slotProps.rowData)"
+          v-tooltip="'Eliminar'"
+        />
+      </template>
+    </DataTableWrapper>
 
-        <DataTable :value="templates" stripedRows responsiveLayout="scroll">
-          <Column field="name" header="Nombre"></Column>
-          <Column field="code" header="Código"></Column>
-          <Column field="version" header="Versión"></Column>
-          <Column field="created_at" header="Fecha Creación">
-            <template #body="slotProps">
-              {{ formatDate(slotProps.data.created_at) }}
-            </template>
-          </Column>
-          <Column header="Acciones">
-            <template #body="slotProps">
-              <Button icon="pi pi-download" class="p-button-rounded p-button-success mr-2" 
-                      title="Descargar Plantilla" />
-              <Button icon="pi pi-file-pdf" class="p-button-rounded p-button-info" 
-                      title="Generar Documento" 
-                      @click="openGenerateDialog(slotProps.data)" />
-            </template>
-          </Column>
-        </DataTable>
-      </TabPanel>
-
-      <TabPanel header="Generar Documentos">
-        <div class="grid">
-          <div class="col-12 md:col-6">
-            <Card>
-              <template #title>Generación Individual</template>
-              <template #content>
-                <div class="field mb-3">
-                  <label for="templateSelect" class="block mb-2">Plantilla</label>
-                  <Dropdown id="templateSelect" v-model="selectedTemplate" 
-                            :options="templates" optionLabel="name" 
-                            placeholder="Seleccione plantilla" class="w-full" />
-                </div>
-                <div class="field mb-3">
-                  <label for="processSelect" class="block mb-2">Proceso/Cartera</label>
-                  <Dropdown id="processSelect" v-model="selectedProcess" 
-                            :options="processes" optionLabel="radicado_number" 
-                            optionValue="id" placeholder="Seleccione proceso" class="w-full" />
-                </div>
-                <Button label="Generar PDF" icon="pi pi-file" class="w-full" 
-                        @click="generateSingleDocument" :loading="generating" />
-              </template>
-            </Card>
-          </div>
-
-          <div class="col-12 md:col-6">
-            <Card>
-              <template #title>Generación Masiva</template>
-              <template #content>
-                <div class="field mb-3">
-                  <label class="block mb-2">Seleccionar Procesos</label>
-                  <Listbox v-model="selectedProcesses" :options="processes" 
-                           optionLabel="radicado_number" optionValue="id" 
-                           multiple filter class="w-full" style="height: 200px" />
-                </div>
-                <div class="alert alert-info mb-3 text-sm">
-                  <i class="pi pi-info-circle"></i> 
-                  Se generarán {{ selectedProcesses.length }} documentos en un archivo ZIP
-                </div>
-                <Button label="Generar Lote ZIP" icon="pi pi-download" class="w-full" 
-                        @click="generateBatchDocuments" :loading="generating" />
-              </template>
-            </Card>
-          </div>
-        </div>
-      </TabPanel>
-
-      <TabPanel header="Documentos Generados">
-        <DataTable :value="generatedDocs" stripedRows responsiveLayout="scroll">
-          <Column field="id" header="#"></Column>
-          <Column field="template_name" header="Plantilla"></Column>
-          <Column field="radicado" header="Radicado"></Column>
-          <Column field="created_at" header="Fecha Generación">
-            <template #body="slotProps">
-              {{ formatDate(slotProps.data.created_at) }}
-            </template>
-          </Column>
-          <Column header="Descarga">
-            <template #body>
-              <Button icon="pi pi-download" class="p-button-rounded p-button-sm" />
-            </template>
-          </Column>
-        </DataTable>
-      </TabPanel>
-    </TabView>
-
-    <!-- Dialog Nueva Plantilla -->
-    <Dialog v-model:visible="showNewTemplateDialog" modal header="Nueva Plantilla Documental" 
-            :style="{ width: '500px' }">
-      <div class="flex flex-col gap-4">
-        <div class="field">
-          <label for="tplName" class="block mb-2">Nombre</label>
-          <InputText id="tplName" v-model="newTemplate.name" class="w-full" />
-        </div>
-        <div class="field">
-          <label for="tplCode" class="block mb-2">Código Único</label>
-          <InputText id="tplCode" v-model="newTemplate.code" class="w-full" />
-        </div>
-        <div class="field">
-          <label for="tplFile" class="block mb-2">Archivo DOCX</label>
-          <input type="file" id="tplFile" @change="onFileSelect" accept=".docx" class="block w-full" />
-        </div>
-        <div class="field">
-          <label for="tplVars" class="block mb-2">Variables (JSON)</label>
-          <Textarea id="tplVars" v-model="newTemplate.variables_schema" rows="5" 
-                    class="w-full font-mono text-sm" 
-                    placeholder='{"cliente_nombre": "", "valor_total": 0}' />
-        </div>
+    <!-- Dialog for uploading documents -->
+    <Dialog 
+      v-model:visible="uploadDialog" 
+      :style="{ width: '500px' }" 
+      header="Subir Documento" 
+      :modal="true" 
+      class="p-fluid"
+    >
+      <div class="field">
+        <label for="file">Seleccionar Archivo</label>
+        <FileUpload 
+          id="file" 
+          name="demo[]" 
+          :multiple="false" 
+          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" 
+          customUpload 
+          @uploader="customUploader"
+          :maxFileSize="10000000"
+        />
+      </div>
+      <div class="field">
+        <label for="documentType">Tipo de Documento</label>
+        <Dropdown 
+          id="documentType" 
+          v-model="newDocument.type" 
+          :options="documentTypes" 
+          optionLabel="label" 
+          optionValue="value"
+          placeholder="Seleccione tipo"
+        />
+      </div>
+      <div class="field">
+        <label for="documentDescription">Descripción</label>
+        <Textarea 
+          id="documentDescription" 
+          v-model="newDocument.description" 
+          :autoResize="true" 
+          rows="3" 
+          cols="30" 
+        />
       </div>
       <template #footer>
-        <Button label="Cancelar" icon="pi pi-times" @click="showNewTemplateDialog = false" 
-                class="p-button-text" />
-        <Button label="Guardar" icon="pi pi-check" @click="saveTemplate" :loading="saving" />
+        <Button 
+          label="Cancelar" 
+          icon="pi pi-times" 
+          text 
+          @click="hideUploadDialog"
+        />
+        <Button 
+          label="Subir" 
+          icon="pi pi-upload" 
+          @click="uploadDocument"
+          :disabled="!newDocument.file"
+        />
       </template>
     </Dialog>
+
+    <!-- Dialog for adding new documents -->
+    <Dialog 
+      v-model:visible="documentDialog" 
+      :style="{ width: '500px' }" 
+      header="Nuevo Documento" 
+      :modal="true" 
+      class="p-fluid"
+    >
+      <div class="field">
+        <label for="documentName">Nombre del Documento</label>
+        <InputText 
+          id="documentName" 
+          v-model.trim="document.name" 
+          required="true" 
+          autofocus 
+          :class="{ 'p-invalid': submitted && !document.name }" 
+        />
+        <small class="p-error" v-if="submitted && !document.name">El nombre es obligatorio.</small>
+      </div>
+      <div class="field">
+        <label for="documentTypeNew">Tipo de Documento</label>
+        <Dropdown 
+          id="documentTypeNew" 
+          v-model="document.type" 
+          :options="documentTypes" 
+          optionLabel="label" 
+          optionValue="value"
+          placeholder="Seleccione tipo"
+        />
+      </div>
+      <div class="field">
+        <label for="documentStatus">Estado</label>
+        <Dropdown 
+          id="documentStatus" 
+          v-model="document.status" 
+          :options="statuses" 
+          optionLabel="label" 
+          optionValue="value"
+          placeholder="Seleccione estado"
+        />
+      </div>
+      <div class="field">
+        <label for="documentClient">Cliente Asociado</label>
+        <Dropdown 
+          id="documentClient" 
+          v-model="document.clientId" 
+          :options="clients" 
+          optionLabel="name" 
+          optionValue="id"
+          placeholder="Seleccione cliente"
+        />
+      </div>
+      <div class="field">
+        <label for="documentDescriptionNew">Descripción</label>
+        <Textarea 
+          id="documentDescriptionNew" 
+          v-model="document.description" 
+          :autoResize="true" 
+          rows="3" 
+          cols="30" 
+        />
+      </div>
+      <template #footer>
+        <Button 
+          label="Cancelar" 
+          icon="pi pi-times" 
+          text 
+          @click="hideDocumentDialog"
+        />
+        <Button 
+          label="Guardar" 
+          icon="pi pi-check" 
+          @click="saveDocument"
+        />
+      </template>
+    </Dialog>
+
+    <!-- Confirmation dialog for deletion -->
+    <Dialog 
+      v-model:visible="deleteDocumentDialog" 
+      :style="{ width: '450px' }" 
+      header="Confirmar" 
+      :modal="true"
+    >
+      <div class="confirmation-content">
+        <i class="pi pi-exclamation-triangle mr-3" style="font-size: 2rem" />
+        <span v-if="documentToDelete">¿Está seguro de eliminar el documento <b>{{ documentToDelete.name }}</b>?</span>
+      </div>
+      <template #footer>
+        <Button 
+          label="No" 
+          icon="pi pi-times" 
+          text 
+          @click="deleteDocumentDialog = false"
+        />
+        <Button 
+          label="Sí" 
+          icon="pi pi-check" 
+          @click="deleteDocument"
+        />
+      </template>
+    </Dialog>
+
+    <!-- Document Generator Dialog -->
+    <DocumentGenerator 
+      v-model:visible="showDocumentGenerator" 
+      :client="selectedClientForGen" 
+      :obligation="selectedObligationForGen"
+      @document-generated="onDocumentGenerated"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useToast } from 'primevue/usetoast';
-import api from '@/services/api';
+import PageHeader from '@/components/PageHeader.vue';
+import DataTableWrapper from '@/components/DataTableWrapper.vue';
+import DocumentGenerator from '@/components/DocumentGenerator.vue';
+import { FilterMatchMode } from 'primevue/api';
 
-const toast = useToast();
-
-// Estado
-const templates = ref([]);
-const processes = ref([]);
-const generatedDocs = ref([]);
-const showNewTemplateDialog = ref(false);
-const generating = ref(false);
-const saving = ref(false);
-
-// Formularios
-const newTemplate = ref({
-  name: '',
-  code: '',
-  variables_schema: '{}'
+// Sample data - in a real app this would come from an API
+const documents = ref([]);
+const uploadDialog = ref(false);
+const documentDialog = ref(false);
+const deleteDocumentDialog = ref(false);
+const documentToDelete = ref(null);
+const loading = ref(true);
+const submitted = ref(false);
+const newDocument = ref({
+  file: null,
+  type: null,
+  description: ''
 });
-const selectedTemplate = ref(null);
-const selectedProcess = ref(null);
-const selectedProcesses = ref([]);
-const selectedFile = ref(null);
+const document = ref({
+  id: null,
+  name: '',
+  type: '',
+  status: 'active',
+  clientId: null,
+  description: ''
+});
 
-// Cargar datos
-const loadTemplates = async () => {
-  try {
-    const res = await api.get('/documents/templates');
-    templates.value = res.data;
-  } catch (error) {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudieron cargar las plantillas' });
-  }
-};
+// Document generation
+const showDocumentGenerator = ref(false);
+const selectedClientForGen = ref(null);
+const selectedObligationForGen = ref(null);
 
-const loadProcesses = async () => {
-  try {
-    // Simulado - debería venir del endpoint de procesos
-    processes.value = [
-      { id: 1, radicado_number: 'RAD-2024-001', client_name: 'Juan Pérez' },
-      { id: 2, radicado_number: 'RAD-2024-002', client_name: 'María Gómez' },
-      { id: 3, radicado_number: 'RAD-2024-003', client_name: 'Empresa XYZ' }
-    ];
-  } catch (error) {
-    console.error('Error cargando procesos', error);
-  }
-};
+// Define table columns
+const tableColumns = ref([
+  { field: 'name', header: 'Nombre', sortable: true },
+  { field: 'type', header: 'Tipo', sortable: true },
+  { field: 'clientName', header: 'Cliente', sortable: true },
+  { field: 'dateCreated', header: 'Fecha', sortable: true },
+  { field: 'status', header: 'Estado', sortable: true },
+  { field: 'actions', header: 'Acciones' }
+]);
 
-// Manejadores
-const onFileSelect = (event) => {
-  selectedFile.value = event.target.files[0];
-};
+// Define document types
+const documentTypes = ref([
+  { label: 'Contrato', value: 'contract' },
+  { label: 'Notificación', value: 'notification' },
+  { label: 'Acuerdo de Pago', value: 'payment_agreement' },
+  { label: 'Resolución', value: 'resolution' },
+  { label: 'Otro', value: 'other' }
+]);
 
-const saveTemplate = async () => {
-  if (!selectedFile.value) {
-    toast.add({ severity: 'warn', summary: 'Advertencia', detail: 'Seleccione un archivo DOCX' });
-    return;
-  }
+// Define statuses
+const statuses = ref([
+  { label: 'Activo', value: 'active' },
+  { label: 'Inactivo', value: 'inactive' },
+  { label: 'Archivado', value: 'archived' }
+]);
 
-  const formData = new FormData();
-  formData.append('name', newTemplate.value.name);
-  formData.append('code', newTemplate.value.code);
-  formData.append('variables_schema', newTemplate.value.variables_schema);
-  formData.append('file', selectedFile.value);
-
-  saving.value = true;
-  try {
-    await api.post('/documents/templates', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    toast.add({ severity: 'success', summary: 'Éxito', detail: 'Plantilla guardada' });
-    showNewTemplateDialog.value = false;
-    loadTemplates();
-  } catch (error) {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo guardar la plantilla' });
-  } finally {
-    saving.value = false;
-  }
-};
-
-const openGenerateDialog = (template) => {
-  selectedTemplate.value = template;
-  // Cambiar a pestaña de generación
-};
-
-const generateSingleDocument = async () => {
-  if (!selectedTemplate.value || !selectedProcess.value) {
-    toast.add({ severity: 'warn', summary: 'Advertencia', detail: 'Seleccione plantilla y proceso' });
-    return;
-  }
-
-  generating.value = true;
-  try {
-    await api.post('/documents/generate', {
-      template_id: selectedTemplate.value.id,
-      process_id: selectedProcess.value,
-      variables: {}
-    });
-    toast.add({ severity: 'success', summary: 'Éxito', detail: 'Documento generado' });
-  } catch (error) {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo generar el documento' });
-  } finally {
-    generating.value = false;
-  }
-};
-
-const generateBatchDocuments = async () => {
-  if (selectedProcesses.value.length === 0) {
-    toast.add({ severity: 'warn', summary: 'Advertencia', detail: 'Seleccione al menos un proceso' });
-    return;
-  }
-
-  generating.value = true;
-  try {
-    const response = await api.post('/documents/generate/batch', {
-      template_id: selectedTemplate.value?.id || templates.value[0]?.id,
-      process_ids: selectedProcesses.value
-    }, { responseType: 'blob' });
-
-    // Descargar ZIP
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'lote_documentos.zip');
-    document.body.appendChild(link);
-    link.click();
-    
-    toast.add({ severity: 'success', summary: 'Éxito', detail: `Lote de ${selectedProcesses.value.length} documentos generado` });
-  } catch (error) {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo generar el lote' });
-  } finally {
-    generating.value = false;
-  }
-};
-
-const formatDate = (dateString) => {
-  return new Date(dateString).toLocaleDateString('es-CO');
-};
+// Define sample clients
+const clients = ref([
+  { id: 1, name: 'Juan Pérez' },
+  { id: 2, name: 'María García' },
+  { id: 3, name: 'Carlos López' }
+]);
 
 onMounted(() => {
-  loadTemplates();
-  loadProcesses();
+  loadDocuments();
 });
+
+const loadDocuments = () => {
+  // Simulate API call
+  setTimeout(() => {
+    documents.value = [
+      { id: 1, name: 'Contrato Servicio Público', type: 'contract', clientName: 'Juan Pérez', dateCreated: '2023-05-15', status: 'active' },
+      { id: 2, name: 'Notificación de Cobro', type: 'notification', clientName: 'María García', dateCreated: '2023-06-20', status: 'active' },
+      { id: 3, name: 'Acuerdo de Pago', type: 'payment_agreement', clientName: 'Carlos López', dateCreated: '2023-07-10', status: 'archived' },
+      { id: 4, name: 'Resolución Final', type: 'resolution', clientName: 'Ana Rodríguez', dateCreated: '2023-04-05', status: 'inactive' },
+      { id: 5, name: 'Documento Adjunto', type: 'other', clientName: 'Luis Martínez', dateCreated: '2023-08-12', status: 'active' }
+    ];
+    loading.value = false;
+  }, 800);
+};
+
+const openUploadDialog = () => {
+  newDocument.value = {
+    file: null,
+    type: null,
+    description: ''
+  };
+  uploadDialog.value = true;
+};
+
+const hideUploadDialog = () => {
+  uploadDialog.value = false;
+};
+
+const openNewDocument = () => {
+  document.value = {
+    id: null,
+    name: '',
+    type: '',
+    status: 'active',
+    clientId: null,
+    description: ''
+  };
+  submitted.value = false;
+  documentDialog.value = true;
+};
+
+const hideDocumentDialog = () => {
+  documentDialog.value = false;
+  submitted.value = false;
+};
+
+const saveDocument = () => {
+  submitted.value = true;
+
+  if (document.value.name.trim()) {
+    if (document.value.id) {
+      // Update existing document
+      const index = documents.value.findIndex(d => d.id === document.value.id);
+      documents.value[index] = {...document.value};
+    } else {
+      // Add new document
+      document.value.id = Math.max(...documents.value.map(d => d.id)) + 1;
+      document.value.dateCreated = new Date().toISOString().split('T')[0];
+      document.value.clientName = clients.value.find(c => c.id === document.value.clientId)?.name || '';
+      documents.value.push({...document.value});
+    }
+    hideDocumentDialog();
+  }
+};
+
+const viewDocument = (doc) => {
+  console.log('Viewing document:', doc);
+  // In a real app, this would open a preview modal or redirect to a document viewer
+};
+
+const downloadDocument = (doc) => {
+  console.log('Downloading document:', doc);
+  // In a real app, this would initiate a file download
+};
+
+const printDocument = (doc) => {
+  console.log('Printing document:', doc);
+  // In a real app, this would initiate a print action
+};
+
+const confirmDeleteDocument = (doc) => {
+  documentToDelete.value = doc;
+  deleteDocumentDialog.value = true;
+};
+
+const deleteDocument = () => {
+  documents.value = documents.value.filter(d => d.id !== documentToDelete.value.id);
+  deleteDocumentDialog.value = false;
+  documentToDelete.value = null;
+};
+
+const getTypeLabel = (type) => {
+  const typeObj = documentTypes.value.find(t => t.value === type);
+  return typeObj ? typeObj.label : type;
+};
+
+const getTypeSeverity = (type) => {
+  switch(type) {
+    case 'contract': return 'info';
+    case 'notification': return 'warning';
+    case 'payment_agreement': return 'success';
+    case 'resolution': return 'help';
+    default: return 'secondary';
+  }
+};
+
+const getStatusLabel = (status) => {
+  const statusObj = statuses.value.find(s => s.value === status);
+  return statusObj ? statusObj.label : status;
+};
+
+const getStatusSeverity = (status) => {
+  switch(status) {
+    case 'active': return 'success';
+    case 'inactive': return 'secondary';
+    case 'archived': return 'info';
+    default: return 'info';
+  }
+};
+
+const onSearchChange = (value) => {
+  console.log('Searching for:', value);
+  // In a real app, this would trigger a filtered API call
+};
+
+const customUploader = (event) => {
+  // Upload the file to a server
+  newDocument.value.file = event.files[0];
+};
+
+const uploadDocument = () => {
+  if (newDocument.value.file && newDocument.value.type) {
+    // Create a new document entry
+    const newDoc = {
+      id: Math.max(...documents.value.map(d => d.id)) + 1,
+      name: newDocument.value.file.name,
+      type: newDocument.value.type,
+      clientName: 'Cliente Ejemplo', // Would come from selection in real app
+      dateCreated: new Date().toISOString().split('T')[0],
+      status: 'active',
+      description: newDocument.value.description
+    };
+    
+    documents.value.push(newDoc);
+    hideUploadDialog();
+  }
+};
+
+// Document generation methods
+const openDocumentGenerator = () => {
+  showDocumentGenerator = true;
+};
+
+const onDocumentGenerated = (documentData) => {
+  console.log('Document generated:', documentData);
+  // In a real app, this would save the generated document to the system
+  // and possibly add it to the documents list
+};
+
 </script>
 
 <style scoped>
-.alert {
-  padding: 1rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
+.documentos {
+  display: flex;
+  flex-direction: column;
 }
-.alert-info {
-  background-color: #e3f2fd;
-  color: #0d47a1;
-  border-left: 4px solid #2196f3;
+
+.confirmation-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>
