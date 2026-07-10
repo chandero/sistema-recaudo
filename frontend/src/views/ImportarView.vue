@@ -204,6 +204,12 @@
                   <p class="m-0 text-sm text-gray-600">{{ (selectedFile.size / 1024 / 1024).toFixed(2) }} MB</p>
                 </div>
               </div>
+              <div v-if="initialProcessState" class="mt-3">
+                <Tag severity="info" class="w-full">
+                  <i class="pi pi-sitemap mr-2"></i>
+                  Estado inicial: {{ processStates.find(s => s.code === initialProcessState)?.name || initialProcessState }}
+                </Tag>
+              </div>
               <ProgressBar v-if="uploading" mode="indeterminate" class="mt-3" style="height: 4px" />
             </div>
           </div>
@@ -236,10 +242,19 @@
         :style="{ width: '900px' }"
         :closable="false"
       >
-        <Message severity="info" class="mb-4">
-          <i class="pi pi-info-circle mr-2"></i>
-          Asigne cada columna del archivo a un campo del sistema. Las columnas sin mapeo serán ignoradas.
-        </Message>
+        <div class="mb-4">
+          <Message severity="info" class="mb-3">
+            <i class="pi pi-info-circle mr-2"></i>
+            Asigne cada columna del archivo a un campo del sistema. Las columnas sin mapeo serán ignoradas.
+          </Message>
+          <div v-if="initialProcessState" class="flex align-items-center gap-2">
+            <i class="pi pi-sitemap text-lg text-blue-600"></i>
+            <span class="font-medium">Estado inicial del proceso:</span>
+            <Tag severity="info" class="ml-auto">
+              {{ processStates.find(s => s.code === initialProcessState)?.name || initialProcessState }}
+            </Tag>
+          </div>
+        </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div v-for="col in currentBatch?.detected_columns || []" :key="col" class="field">
@@ -281,6 +296,11 @@
               class="w-full"
             />
           </div>
+        </div>
+        
+        <div v-if="initialProcessState" class="hidden">
+          <!-- Campo oculto para asegurar que el estado inicial se mantenga -->
+          <InputText :value="initialProcessState" />
         </div>
 
         <template #footer>
@@ -341,6 +361,16 @@
               <p class="m-0 font-medium" :class="selectedBatch.error_rows > 0 ? 'text-red-600' : 'text-gray-600'">
                 {{ selectedBatch.error_rows }}
               </p>
+            </div>
+            <div class="card-detail" v-if="selectedBatch.initial_process_state">
+              <label class="text-sm text-gray-500">
+                <i class="pi pi-sitemap mr-1"></i>Estado Inicial
+              </label>
+              <Tag 
+                :value="getProcessStateName(selectedBatch.initial_process_state)" 
+                severity="info"
+                class="font-medium"
+              />
             </div>
             <div class="card-detail">
               <label class="text-sm text-gray-500">
@@ -546,15 +576,16 @@ const uploadFile = async () => {
       summary: 'Archivo subido', 
       detail: `Se detectaron ${response.data.total_rows} filas` 
     });
-    showUploadDialog.value = false;
-    selectedFile.value = null;
-    selectedTemplate.value = null;
-    initialProcessState.value = null;
+          
     if (response.data.status === 'MAPPING' && response.data.detected_columns) {
       currentBatch.value = response.data;
       columnMapping.value = {};
+      // Mantener el estado inicial para el siguiente paso
+      initialProcessState.value = formData.get('initial_process_state');
+      showUploadDialog.value = false;
       openMappingDialog(response.data);
     } else {
+      showUploadDialog.value = false;
       loadBatches();
     }
   } catch (error) {
@@ -649,6 +680,12 @@ const getStatusLabel = (status) => {
     'FAILED': 'Fallido'
   };
   return labels[status] || status;
+};
+
+const getProcessStateName = (stateCode) => {
+  if (!stateCode) return 'No especificado';
+  const state = processStates.value.find(s => s.code === stateCode);
+  return state ? state.name : stateCode;
 };
 
 const getStatusSeverity = (status) => {

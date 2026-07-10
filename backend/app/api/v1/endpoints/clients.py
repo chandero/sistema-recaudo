@@ -176,6 +176,7 @@ async def create_obligation(
 async def import_from_excel(
     file: UploadFile = File(...),
     column_mapping: str = Form(...),
+    initial_process_state: Optional[int] = Form(None),
     save_template: bool = Form(default=False),
     template_name: Optional[str] = Form(default=None),
     current_user: User = Depends(get_current_active_user),
@@ -197,6 +198,7 @@ async def import_from_excel(
         user_id=current_user.id,
         save_template=save_template,
         template_name=template_name,
+        initial_process_state=initial_process_state,
         session=session
     )
     

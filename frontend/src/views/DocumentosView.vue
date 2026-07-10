@@ -249,15 +249,50 @@ de <template>
       :obligation="selectedObligationForGen"
       @document-generated="onDocumentGenerated"
     />
+    
+    <!-- Template Analysis Dialog -->
+    <Dialog 
+      v-model:visible="analysisDialog" 
+      :style="{ width: '600px' }" 
+      header="Análisis de Variables de Plantilla" 
+      :modal="true"
+    >
+      <div v-if="analysisResult">
+        <h4>Variables encontradas: {{ analysisResult.count }}</h4>
+        <div class="field">
+          <label>Variables extraídas:</label>
+          <div class="flex flex-wrap gap-2 mt-2">
+            <Tag v-for="variable in analysisResult.variables" :key="variable" :value="variable" severity="info" />
+          </div>
+        </div>
+        <div class="mt-3">
+          <label>Esquema JSON generado:</label>
+          <Textarea :value="JSON.stringify(schemaFromAnalysis, null, 2)" autoResize rows="5" cols="30" readonly />
+        </div>
+      </div>
+      <div v-else-if="analysisLoading">
+        <p>Analizando plantilla, por favor espere...</p>
+        <ProgressBar mode="indeterminate" class="mt-2" />
+      </div>
+      <template #footer>
+        <Button 
+          label="Cerrar" 
+          icon="pi pi-times" 
+          text 
+          @click="analysisDialog = false; analysisResult = null"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import DataTableWrapper from '@/components/DataTableWrapper.vue';
 import DocumentGenerator from '@/components/DocumentGenerator.vue';
 import { FilterMatchMode } from 'primevue/api';
+import api from '@/services/api'; // Asegurarse de importar el servicio API
 
 // Sample data - in a real app this would come from an API
 const documents = ref([]);
@@ -285,6 +320,22 @@ const document = ref({
 const showDocumentGenerator = ref(false);
 const selectedClientForGen = ref(null);
 const selectedObligationForGen = ref(null);
+
+// Template analysis
+const analysisDialog = ref(false);
+const analysisResult = ref(null);
+const analysisLoading = ref(false);
+const currentTemplateToAnalyze = ref(null);
+
+// Calculate schema from analysis for the JSON editor
+const schemaFromAnalysis = computed(() => {
+  if (!analysisResult.value || !analysisResult.value.variables) return {};
+  const schema = {};
+  analysisResult.value.variables.forEach(varName => {
+    schema[varName] = "string"; // Default type
+  });
+  return schema;
+});
 
 // Define table columns
 const tableColumns = ref([
@@ -472,13 +523,30 @@ const uploadDocument = () => {
 
 // Document generation methods
 const openDocumentGenerator = () => {
-  showDocumentGenerator = true;
+  showDocumentGenerator.value = true;
 };
 
 const onDocumentGenerated = (documentData) => {
   console.log('Document generated:', documentData);
   // In a real app, this would save the generated document to the system
   // and possibly add it to the documents list
+};
+
+// Template analysis methods
+const analyzeTemplate = async (templateId) => {
+  analysisLoading.value = true;
+  analysisResult.value = null;
+  
+  try {
+    const response = await api.get(`/documents/templates/${templateId}/analyze`);
+    analysisResult.value = response.data;
+    analysisLoading.value = false;
+    analysisDialog.value = true;
+  } catch (error) {
+    console.error('Error analyzing template:', error);
+    analysisLoading.value = false;
+    alert('Error al analizar la plantilla: ' + error.message);
+  }
 };
 
 </script>
@@ -493,5 +561,9 @@ const onDocumentGenerated = (documentData) => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.p-tag {
+  margin: 0.2rem;
 }
 </style>

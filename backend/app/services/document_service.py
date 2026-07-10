@@ -5,8 +5,10 @@ Maneja plantillas DOCX con variables Jinja2 y genera salida PDF
 import os
 import io
 import zipfile
+import re
 from typing import List, Dict, Any
 from docxtpl import DocxTemplate
+from lxml import etree
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
@@ -19,6 +21,39 @@ from pathlib import Path
 
 class DocumentGenerationService:
     
+    @staticmethod
+    def extract_variables_from_template(template_path: str) -> List[str]:
+        """
+        Extrae las variables de una plantilla DOCX buscando patrones de Jinja2 {{variable}}
+        """
+        try:
+            doc = DocxTemplate(template_path)
+            
+            # Extraer el contenido XML del documento
+            variables = set()
+            
+            # Procesar todos los párrafos del documento
+            for paragraph in doc.doc.paragraphs:
+                text = paragraph.text
+                # Buscar patrones {{variable}} en el texto
+                matches = re.findall(r'\{\{(\s*[a-zA-Z_][a-zA-Z0-9_]*\s*)\}\}', text)
+                for match in matches:
+                    variables.add(match.strip())
+            
+            # Procesar tablas
+            for table in doc.doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            text = paragraph.text
+                            matches = re.findall(r'\{\{(\s*[a-zA-Z_][a-zA-Z0-9_]*\s*)\}\}', text)
+                            for match in matches:
+                                variables.add(match.strip())
+            
+            return list(variables)
+        except Exception as e:
+            raise Exception(f"Error al extraer variables de la plantilla: {str(e)}")
+
     @staticmethod
     def render_template(template_path: str, context: Dict[str, Any], output_path: str) -> str:
         """
