@@ -1,0 +1,62 @@
+2026-07-10 13:47:17,976 INFO app.core.logging Database initialized
+2026-07-10 13:48:31,188 INFO app.core.logging Database initialized
+2026-07-10 13:48:49,480 INFO app.core.logging Database initialized
+2026-07-10 13:48:54,298 INFO app.core.logging Database initialized
+2026-07-10 14:32:18,743 INFO app.core.logging Database initialized
+2026-07-10 15:12:16,650 INFO app.core.logging Database initialized
+2026-07-10 15:18:39,453 INFO app.core.logging Database initialized
+2026-07-10 15:37:37,203 INFO app.core.logging Database initialized
+2026-07-10 16:09:54,215 INFO app.core.logging Database initialized
+2026-07-10 16:30:49,612 INFO app.core.logging Database initialized
+2026-07-10 16:34:27,758 INFO app.core.logging Database initialized
+2026-07-10 16:50:33,895 INFO app.core.logging Database initialized
+2026-07-10 16:56:25,263 INFO app.core.logging Database initialized
+2026-07-10 17:08:50,644 INFO app.core.logging Database initialized
+2026-07-10 17:11:03,309 INFO app.core.logging Database initialized
+2026-07-10 19:10:23,702 INFO app.core.logging Database initialized
+2026-07-10 19:12:28,109 INFO app.core.logging Database initialized
+2026-07-10 19:19:19,171 WARNING app.core.logging Validation error: [{'type': 'int_parsing', 'loc': ('path', 'process_id'), 'msg': 'Input should be a valid integer, unable to parse string as an integer', 'input': 'config', 'url': 'https://errors.pydantic.dev/2.5/v/int_parsing'}], body: <bound method Request.body of <starlette.requests.Request object at 0x7f7dd071e9d0>>
+2026-07-10 19:21:56,451 INFO app.core.logging Database initialized
+2026-07-10 19:32:48,053 INFO app.core.logging Database initialized
+2026-07-10 19:38:02,624 INFO app.core.logging Database initialized
+2026-07-10 19:38:23,733 INFO app.core.logging Database initialized
+2026-07-10 19:46:48,842 INFO app.core.logging Database initialized
+2026-07-10 19:54:29,026 WARNING app.core.logging Validation error: [{'type': 'missing', 'loc': ('body', 'name'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'code'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'file'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}], body: <bound method Request.body of <starlette.requests.Request object at 0x7fde96555b10>>
+2026-07-10 19:58:23,730 INFO app.core.logging Database initialized
+2026-07-10 20:38:02,476 WARNING app.core.logging Validation error: [{'type': 'missing', 'loc': ('body', 'name'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'code'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'file'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}], body: <bound method Request.body of <starlette.requests.Request object at 0x7f10ca986510>>
+2026-07-10 20:40:21,216 WARNING app.core.logging Validation error: [{'type': 'missing', 'loc': ('body', 'name'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'code'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'file'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}], body: <bound method Request.body of <starlette.requests.Request object at 0x7f10ca994b90>>
+2026-07-10 20:48:45,304 INFO app.core.logging Database initialized
+2026-07-10 21:19:14,799 INFO app.core.logging Database initialized
+2026-07-10 21:28:52,765 WARNING app.core.logging Validation error: [{'type': 'missing', 'loc': ('body', 'name'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'code'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'file'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}], body: <bound method Request.body of <starlette.requests.Request object at 0x7f08020ba510>>
+2026-07-10 21:29:05,735 WARNING app.core.logging Validation error: [{'type': 'missing', 'loc': ('body', 'name'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'code'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}, {'type': 'missing', 'loc': ('body', 'file'), 'msg': 'Field required', 'input': None, 'url': 'https://errors.pydantic.dev/2.5/v/missing'}], body: <bound method Request.body of <starlette.requests.Request object at 0x7f08020bd150>>
+2026-07-10 21:30:26,727 WARNING app.core.logging Validation error: [{'type': 'json_invalid', 'loc': ('body', 1), 'msg': 'JSON decode error', 'input': {}, 'ctx': {'error': 'Expecting property name enclosed in double quotes'}}], body: <bound method Request.body of <starlette.requests.Request object at 0x7f08020bea50>>
+2026-07-10 21:31:55,383 INFO app.core.logging Database initialized
+2026-07-10 21:33:25,030 INFO app.core.logging Database initialized
+2026-07-10 21:43:53,377 INFO app.core.logging Database initialized
+2026-07-10 21:48:51,349 INFO app.core.logging Database initialized
+2026-07-10 21:53:32,240 INFO app.core.logging Database initialized
+2026-07-10 21:54:51,402 INFO app.core.logging Database initialized
+2026-07-10 21:56:43,839 INFO app.core.logging Database initialized
+2026-07-10 22:05:08,445 INFO app.core.logging Database initialized
+2026-07-10 22:09:54,626 INFO app.core.logging Database initialized
+2026-07-11 16:51:33,648 INFO app.core.logging Database initialized
+2026-07-11 17:10:31,048 INFO app.core.logging Database initialized
+2026-07-12 01:54:43,326 INFO app.core.logging Database initialized
+2026-07-12 01:55:06,426 INFO app.core.logging Database initialized
+2026-07-12 01:55:21,107 INFO app.core.logging Database initialized
+2026-07-12 01:55:40,829 INFO app.core.logging Database initialized
+2026-07-12 03:28:13,925 INFO app.core.logging Database initialized
+2026-07-12 03:28:18,924 INFO app.core.logging Database initialized
+2026-07-12 03:28:31,180 INFO app.core.logging Database initialized
+2026-07-12 03:28:51,305 INFO app.core.logging Database initialized
+2026-07-12 03:59:24,325 INFO app.core.logging Database initialized
+2026-07-12 03:59:44,598 INFO app.core.logging Database initialized
+2026-07-12 04:00:25,593 INFO app.core.logging Database initialized
+2026-07-12 04:00:46,650 INFO app.core.logging Database initialized
+2026-07-12 04:36:19,769 INFO app.core.logging Database initialized
+2026-07-12 04:36:38,268 INFO app.core.logging Database initialized
+2026-07-12 04:57:54,576 INFO app.core.logging Database initialized
+2026-07-12 05:03:02,810 INFO app.core.logging Database initialized
+2026-07-12 05:03:02,887 INFO app.core.logging Created default tenant: 1
+2026-07-12 05:03:02,923 INFO app.core.logging Workflow seeded: {'created': 20, 'updated': 0, 'errors': 0}
+2026-07-12 05:03:03,295 INFO app.core.logging Created default admin user: 1

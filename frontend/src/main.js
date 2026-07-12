@@ -1,106 +1,94 @@
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import PrimeVue from 'primevue/config'
-import router from './router'
-import App from './App.vue'
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import PrimeVue from 'primevue/config';
+import ToastService from 'primevue/toastservice';
+import ConfirmationService from 'primevue/confirmationservice';
+import Tooltip from 'primevue/tooltip';
+import BadgeDirective from 'primevue/badgedirective';
+import StyleClass from 'primevue/styleclass';
 
-// PrimeVue 3.x - Import styles for production bundle
-import 'primevue/resources/themes/lara-light-indigo/theme.css'
-import 'primevue/resources/primevue.min.css'
-import 'primeicons/primeicons.css'
-import 'primeflex/primeflex.min.css'
+// Importar componentes específicos de PrimeVue
+import InputText from 'primevue/inputtext';
+import Password from 'primevue/password';
+import Button from 'primevue/button';
+import Message from 'primevue/message';
+import FileUpload from 'primevue/fileupload';
+import Dropdown from 'primevue/dropdown';
+import Textarea from 'primevue/textarea';
+import Dialog from 'primevue/dialog';
+import Tag from 'primevue/tag';
+import MultiSelect from 'primevue/multiselect';
+import SplitButton from 'primevue/splitbutton';
+import TabView from 'primevue/tabview';
+import TabPanel from 'primevue/tabpanel';
+import DataTable from 'primevue/datatable';
+import Column from 'primevue/column';
+import Toolbar from 'primevue/toolbar';
+import IconField from 'primevue/iconfield';
+import InputIcon from 'primevue/inputicon';
 
-// Import and register commonly used components globally
-import InputText from 'primevue/inputtext'
-import Password from 'primevue/password'
-import Button from 'primevue/button'
-import Message from 'primevue/message'
-import Card from 'primevue/card'
-import Dialog from 'primevue/dialog'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
-import Tag from 'primevue/tag'
-import Dropdown from 'primevue/dropdown'
-import Textarea from 'primevue/textarea'
-import Checkbox from 'primevue/checkbox'
-import TabView from 'primevue/tabview'
-import TabPanel from 'primevue/tabpanel'
-import Menu from 'primevue/menu'
-import Sidebar from 'primevue/sidebar'
-import Avatar from 'primevue/avatar'
-import Badge from 'primevue/badge'
-import IconField from 'primevue/iconfield'
-import InputIcon from 'primevue/inputicon'
-import FileUpload from 'primevue/fileupload'
-import ToastService from 'primevue/toastservice'
-import Divider from 'primevue/divider'
-import ScrollPanel from 'primevue/scrollpanel'
-import Listbox from 'primevue/listbox'
-import InputNumber from 'primevue/inputnumber'
+import App from './App.vue';
+import router from './router';
+import { useAuthStore } from './stores/auth';
 
-const app = createApp(App)
-const pinia = createPinia()
+import 'primeicons/primeicons.css';
+import 'primeflex/primeflex.css';
+import 'primevue/resources/primevue.min.css';
+import 'primevue/resources/themes/lara-light-indigo/theme.css';
+import './assets/styles/layout.css';
+import './assets/styles/overrides.css';
 
-app.use(pinia)
-app.use(router)
-app.use(PrimeVue, { ripple: true })
+const app = createApp(App);
 
-// Global error handler for uncaught errors
-window.onerror = function(message, source, lineno, colno, error) {
-  console.error('Global error:', message, error);
-  // Show error on screen
-  document.body.innerHTML = `
-    <div style="padding: 40px; background: #ff4444; color: white; font-family: sans-serif; font-size: 18px;">
-      <h1 style="font-size: 24px; margin-bottom: 20px;">❌ Error de la aplicación</h1>
-      <p><strong>Mensaje:</strong> ${message}</p>
-      <p><strong>Archivo:</strong> ${source}</p>
-      <p><strong>Línea:</strong> ${lineno}</p>
-      <p style="margin-top: 20px;">Recarga la página (F5) para intentar de nuevo</p>
-    </div>
-  `;
-  return true;
+app.use(createPinia());
+app.use(router);
+app.use(PrimeVue, {
+    ripple: true
+});
+app.use(ToastService);
+app.use(ConfirmationService);
+
+app.directive('tooltip', Tooltip);
+app.directive('badge', BadgeDirective);
+app.directive('styleclass', StyleClass);
+
+// Registrar componentes de PrimeVue
+app.component('InputText', InputText);
+app.component('Password', Password);
+app.component('Button', Button);
+app.component('Message', Message);
+app.component('FileUpload', FileUpload);
+app.component('Dropdown', Dropdown);
+app.component('Textarea', Textarea);
+app.component('Dialog', Dialog);
+app.component('Tag', Tag);
+app.component('MultiSelect', MultiSelect);
+app.component('SplitButton', SplitButton);
+app.component('TabView', TabView);
+app.component('TabPanel', TabPanel);
+app.component('DataTable', DataTable);
+app.component('Column', Column);
+app.component('Toolbar', Toolbar);
+app.component('IconField', IconField);
+app.component('InputIcon', InputIcon);
+
+// Manejador global de errores
+app.config.errorHandler = (err, instance, info) => {
+    console.error('Error Global:', err);
+    console.error('Info:', info);
+    
+    // Intentar obtener la store de autenticación para mostrar el error
+    try {
+        const authStore = useAuthStore();
+        // Aquí podrías agregar lógica para mostrar el error al usuario
+        // por ejemplo, mostrando un toast o guardando el error para mostrarlo
+        if (authStore.currentUser) {
+            // Solo mostrar errores si hay un usuario autenticado
+            console.error(`Error en componente: ${instance?.$options.name || 'desconocido'}, Info: ${info}`);
+        }
+    } catch (storeErr) {
+        console.error('Error accediendo a la store:', storeErr);
+    }
 };
 
-// Also catch unhandled promise rejections
-window.addEventListener('unhandledrejection', function(event) {
-  console.error('Unhandled rejection:', event.reason);
-  document.body.innerHTML = `
-    <div style="padding: 40px; background: #ff4444; color: white; font-family: sans-serif; font-size: 18px;">
-      <h1 style="font-size: 24px; margin-bottom: 20px;">❌ Error en la aplicación</h1>
-      <p><strong>Error:</strong> ${event.reason.message || event.reason}</p>
-      <p style="margin-top: 20px;">Recarga la página (F5) para intentar de nuevo</p>
-    </div>
-  `;
-});
-
-// Register global components
-app.component('InputText', InputText)
-app.component('Password', Password)
-app.component('Button', Button)
-app.component('Message', Message)
-app.component('Card', Card)
-app.component('Dialog', Dialog)
-app.component('DataTable', DataTable)
-app.component('Column', Column)
-app.component('Tag', Tag)
-app.component('Dropdown', Dropdown)
-app.component('Textarea', Textarea)
-app.component('Checkbox', Checkbox)
-app.component('TabView', TabView)
-app.component('TabPanel', TabPanel)
-app.component('Menu', Menu)
-app.component('Drawer', Sidebar)  // Drawer is called Sidebar in PrimeVue 3.x
-app.component('Avatar', Avatar)
-app.component('Badge', Badge)
-app.component('IconField', IconField)
-app.component('InputIcon', InputIcon)
-app.component('FileUpload', FileUpload)
-app.component('Divider', Divider)
-app.component('ScrollPanel', ScrollPanel)
-app.component('Listbox', Listbox)
-app.component('InputNumber', InputNumber)
-
-// Install ToastService
-app.use(ToastService)
-
-app.mount('#app')
+app.mount('#app');

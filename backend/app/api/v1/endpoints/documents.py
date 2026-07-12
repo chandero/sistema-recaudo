@@ -1,12 +1,14 @@
 """
 Endpoints para generación de documentos y gestión de correspondencia
 """
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body
 from sqlmodel import Session, select
 from typing import List, Optional
 import os
 import shutil
 import json
+import tempfile
+from datetime import datetime
 
 from app.core.database import get_session
 from app.core.dependencies import get_current_active_user
@@ -168,6 +170,57 @@ def generate_document(
             os.remove(temp_docx)
         
         return {"message": "Documento generado", "path": output_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/templates/{template_id}/generate")
+def generate_document_from_template(
+    template_id: int,
+    variables: dict = Body(...),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Generar un documento directamente desde una plantilla con variables"""
+    statement = select(DocumentTemplate).where(
+        DocumentTemplate.id == template_id,
+        DocumentTemplate.tenant_id == current_user.tenant_id
+    )
+    template = session.exec(statement).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    
+    try:
+        # Crear archivo temporal DOCX para vista previa
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+            temp_path = temp_file.name
+        
+        # Generar documento
+        DocumentGenerationService.render_template(
+            template.file_path, 
+            variables, 
+            temp_path
+        )
+        
+        # Leer el contenido del archivo generado
+        with open(temp_path, "rb") as f:
+            content = f.read()
+        
+        # Eliminar el archivo temporal
+        os.unlink(temp_path)
+        
+        # Devolver el contenido del archivo generado como respuesta binaria
+        from fastapi.responses import Response
+        
+        response = Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f"attachment; filename={template.code}_preview.docx"
+            }
+        )
+        
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

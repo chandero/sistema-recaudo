@@ -5,9 +5,6 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 // Crear instancia de axios
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 })
 
 // Interceptor para agregar token automáticamente
@@ -19,6 +16,12 @@ apiClient.interceptors.request.use(
     } else {
       console.warn('No access_token found in localStorage for request:', config.url)
     }
+    
+    // Si el body es FormData, no establecer Content-Type para que axios lo genere automáticamente
+    if (!(config.data instanceof FormData)) {
+      config.headers['Content-Type'] = 'application/json'
+    }
+    
     return config
   },
   (error) => {
@@ -62,7 +65,13 @@ export const authService = {
     localStorage.removeItem('user_role')
   },
 
+  // Método para obtener el usuario actual desde el backend
   getCurrentUser() {
+    return apiClient.get('/auth/me')
+  },
+
+  // Método para decodificar el token (mantenido para compatibilidad)
+  decodeToken() {
     const token = localStorage.getItem('access_token')
     if (!token) return null
     
@@ -216,7 +225,9 @@ export const documentService = {
   },
 
   createTemplate(data) {
-    return apiClient.post('/documents/templates', data)
+    // No especificar Content-Type para que axios lo genere automáticamente si es FormData
+    const config = {}
+    return apiClient.post('/documents/templates', data, config)
   },
 
   generateDocument(templateId, variables) {
@@ -225,7 +236,21 @@ export const documentService = {
 
   getGeneratedDocuments(params = {}) {
     return apiClient.get('/documents/generated', { params })
+  },
+
+  downloadTemplate: async (templateId) => {
+    const response = await apiClient.get(`/documents/templates/${templateId}/download`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  generateDocumentFromTemplate: async (templateId, clientData) => {
+    const response = await apiClient.post(`/documents/templates/${templateId}/generate`, clientData, {
+      responseType: 'blob'
+    });
+    return response.data;
   }
-}
+};
 
 export default apiClient

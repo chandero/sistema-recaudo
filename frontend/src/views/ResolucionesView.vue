@@ -1,6 +1,5 @@
 <template>
-  <Layout>
-    <div class="resoluciones-view">
+  <div class="resoluciones-view">
       <!-- Header -->
       <div class="view-header mb-4">
         <div class="flex align-items-center gap-3">
@@ -414,13 +413,14 @@
 
       <Toast position="top-right" />
     </div>
-  </Layout>
-</template>
+  </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import Layout from '../components/Layout.vue';
+import { useToast } from 'primevue/usetoast';
 import api from '../services/api';
+
+const toast = useToast();
 
 // Estados
 const loading = ref(false);

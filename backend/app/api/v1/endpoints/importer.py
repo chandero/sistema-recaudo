@@ -161,6 +161,97 @@ def delete_mapping_template(
     return {"message": "Plantilla desactivada exitosamente"}
 
 
+@router.get("/mapping-templates/{template_id}/preview")
+def get_template_preview(
+    template_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Obtiene una vista previa detallada de una plantilla de mapeo"""
+    statement = select(ImportMappingTemplate).where(
+        ImportMappingTemplate.id == template_id,
+        ImportMappingTemplate.tenant_id == current_user.tenant_id
+    )
+    template = session.exec(statement).first()
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    
+    # Convertir el objeto de plantilla al formato de vista previa
+    preview_data = {
+        'id': template.id,
+        'name': template.name,
+        'description': template.description,
+        'is_active': template.is_active,
+        'created_at': template.created_at,
+        'mapping_config': template.mapping_config,
+        'supported_fields': template.supported_fields,
+        'mapped_columns_count': len(template.mapping_config) if template.mapping_config else 0,
+        'mapped_columns': list(template.mapping_config.keys()) if template.mapping_config else [],
+        'mapped_system_fields': list(template.mapping_config.values()) if template.mapping_config else []
+    }
+    
+    return preview_data
+
+
+@router.post("/validate-file")
+async def validate_import_file(
+    file: UploadFile = File(...),
+    mapping_config: str = Form(...),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Valida un archivo de importación antes de procesarlo"""
+    import tempfile
+    import os
+    
+    # Validar extensión
+    allowed_extensions = [".xlsx", ".xls", ".csv"]
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Archivo no válido. Extensiones permitidas: {', '.join(allowed_extensions)}"
+        )
+    
+    # Obtener el mapping config del formulario
+    try:
+        column_mapping = json.loads(mapping_config)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Configuración de mapeo inválida")
+    
+    # Guardar archivo temporalmente
+    temp_dir = "/tmp/imports"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    temp_path = f"{temp_dir}/{current_user.tenant_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    
+    with open(temp_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+    
+    try:
+        # Leer archivo
+        if file_ext == ".csv":
+            df = pd.read_csv(temp_path, encoding='utf-8')
+        else:
+            df = pd.read_excel(temp_path)
+        
+        # Validar contenido
+        validation_result = import_service.validate_import_file_content(df, column_mapping)
+        
+        # Borrar archivo temporal
+        os.remove(temp_path)
+        
+        return validation_result
+    except Exception as e:
+        # Borrar archivo temporal en caso de error
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=400, detail=f"Error al validar archivo: {str(e)}")
+
+
 @router.post("/upload", response_model=ImportBatchResponse)
 async def upload_file(
     file: UploadFile = File(...),

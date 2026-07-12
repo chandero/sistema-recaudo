@@ -1,6 +1,5 @@
 <template>
-  <Layout>
-    <div class="clientes-view">
+  <div class="clientes-view">
       <div class="view-header">
         <div>
           <h1>Gestión de Clientes</h1>
@@ -153,12 +152,10 @@
         </form>
       </Dialog>
     </div>
-  </Layout>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import Layout from '../components/Layout.vue'
 import { clientService } from '../services/api'
 import { useToast } from 'primevue/usetoast'
 

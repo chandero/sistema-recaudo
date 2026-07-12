@@ -17,4 +17,13 @@ def get_session() -> Session:
 
 
 def init_db():
+    # Importar todos los modelos para que SQLModel los registre
+    from app.models.user import User
+    from app.models.tenant import Tenant
+    from app.models.client import Client
+    from app.models.obligation import Obligation
+    from app.models.process import CobroProcess
+    from app.models.document import DocumentTemplate, GeneratedDocument
+    
+    # Crear todas las tablas
     SQLModel.metadata.create_all(engine)

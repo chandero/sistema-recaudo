@@ -6,8 +6,77 @@ from app.core.dependencies import get_current_active_user
 from app.models.process import CobroProcess, ProcessHistory, ProcessStatus
 from app.models.user import User
 from app.schemas.process import CobroProcessResponse, CobroProcessCreate, CobroProcessUpdate, ProcessHistoryResponse
+from pydantic import BaseModel
+from app.models.tenant import Tenant
 
 router = APIRouter()
+
+
+class ProcessConfig(BaseModel):
+    prefijo_resolucion: str = "RES-2024"
+    numero_inicial: int = 1000
+    numero_actual: int = 1050
+    prefijo_radicado: str = "RAD-2024"
+    radicado_inicial: int = 5000
+
+
+class ProcessConfigUpdate(BaseModel):
+    prefijo_resolucion: Optional[str] = None
+    numero_inicial: Optional[int] = None
+    numero_actual: Optional[int] = None
+    prefijo_radicado: Optional[str] = None
+    radicado_inicial: Optional[int] = None
+
+
+# Almacenamiento temporal de configuración por tenant (en producción esto iría en DB)
+config_storage = {}
+
+
+@router.get("/config", response_model=ProcessConfig)
+async def get_process_config(
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Obtener la configuración de procesos para el tenant actual."""
+    tenant_id = current_user.tenant_id
+    
+    if tenant_id not in config_storage:
+        # Configuración por defecto
+        config_storage[tenant_id] = {
+            "prefijo_resolucion": "RES-2024",
+            "numero_inicial": 1000,
+            "numero_actual": 1050,
+            "prefijo_radicado": "RAD-2024",
+            "radicado_inicial": 5000
+        }
+    
+    return ProcessConfig(**config_storage[tenant_id])
+
+
+@router.post("/config", response_model=ProcessConfig)
+async def update_process_config(
+    config_update: ProcessConfigUpdate,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Actualizar la configuración de procesos para el tenant actual."""
+    tenant_id = current_user.tenant_id
+    
+    if tenant_id not in config_storage:
+        config_storage[tenant_id] = {
+            "prefijo_resolucion": "RES-2024",
+            "numero_inicial": 1000,
+            "numero_actual": 1050,
+            "prefijo_radicado": "RAD-2024",
+            "radicado_inicial": 5000
+        }
+    
+    # Actualizar solo los campos que vienen en la solicitud
+    for field, value in config_update.model_dump(exclude_unset=True).items():
+        if value is not None:
+            config_storage[tenant_id][field] = value
+    
+    return ProcessConfig(**config_storage[tenant_id])
 
 
 @router.get("/", response_model=List[CobroProcessResponse])

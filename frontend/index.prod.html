@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gestión de Cartera</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+    <script>
+      // Fallback message if JS fails
+      setTimeout(function() {
+        if (!document.getElementById('app').innerHTML || document.getElementById('app').innerHTML.trim() === '<div id="app"></div>') {
+          document.body.innerHTML = '<div style="padding: 40px; text-align: center; font-family: sans-serif;"><h1>Cargando...</h1><p>Si no carga, recarga con Ctrl+F5</p></div>';
+        }
+      }, 5000);
+    </script>
+  </body>
+</html>

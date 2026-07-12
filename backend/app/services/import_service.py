@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from sqlmodel import Session, select
 from fastapi import UploadFile, HTTPException
 import pandas as pd
+import re
 
 from app.models.client import Client, Obligation
 from app.models.import_template import ImportTemplate
@@ -46,21 +47,21 @@ def suggest_column_mapping(df_columns: List[str]) -> Dict[str, str]:
     """Sugerir mapeo inteligente de columnas basado en nombres similares."""
     # Mapeo interno del sistema
     system_fields = {
-        'IDENTIFICACION': ['identificacion', 'nit', 'cedula', 'id'],
-        'NOMBRE': ['nombre', 'razon_social', 'contribuyente', 'cliente'],
-        'DIRECCION': ['direccion', 'dir_notificacion', 'dir', 'address'],
-        'TELEFONO': ['telefono', 'celular', 'phone', 'movil'],
-        'EMAIL': ['email', 'correo', 'mail', 'e-mail'],
-        'CIUDAD': ['ciudad', 'municipio', 'localidad'],
-        'DEPARTAMENTO': ['departamento', 'estado', 'provincia'],
-        'NUMERO_OBLIGACION': ['numero_obligacion', 'factura', 'obligacion', 'cuenta', 'referencia'],
-        'VIGENCIA': ['vigencia', 'periodo', 'ano', 'año', 'year'],
-        'VALOR_TOTAL': ['valor_total', 'valor', 'deuda', 'total', 'monto'],
-        'CAPITAL': ['capital', 'valor_capital'],
-        'INTERESES': ['intereses', 'valor_intereses'],
-        'MORA': ['mora', 'valor_mora'],
-        'FECHA_EMISION': ['fecha_emision', 'fecha_expedicion', 'emision'],
-        'FECHA_VENCIMIENTO': ['fecha_vencimiento', 'vencimiento', 'fecha_limite']
+        'IDENTIFICACION': ['identificacion', 'nit', 'cedula', 'id', 'documento'],
+        'NOMBRE': ['nombre', 'razon_social', 'contribuyente', 'cliente', 'razon social'],
+        'DIRECCION': ['direccion', 'dir_notificacion', 'dir', 'address', 'ubicacion'],
+        'TELEFONO': ['telefono', 'celular', 'phone', 'movil', 'tel'],
+        'EMAIL': ['email', 'correo', 'mail', 'e-mail', 'correo_electronico'],
+        'CIUDAD': ['ciudad', 'municipio', 'localidad', 'town', 'city'],
+        'DEPARTAMENTO': ['departamento', 'estado', 'provincia', 'state'],
+        'NUMERO_OBLIGACION': ['numero_obligacion', 'factura', 'obligacion', 'cuenta', 'referencia', 'num obligacion'],
+        'VIGENCIA': ['vigencia', 'periodo', 'ano', 'año', 'year', 'anio'],
+        'VALOR_TOTAL': ['valor_total', 'valor', 'deuda', 'total', 'monto', 'importe'],
+        'CAPITAL': ['capital', 'valor_capital', 'monto_capital'],
+        'INTERESES': ['intereses', 'interes', 'valor_intereses', 'interes_corriente'],
+        'MORA': ['mora', 'valor_mora', 'interes_mora', 'recargo'],
+        'FECHA_EMISION': ['fecha_emision', 'fecha_expedicion', 'emision', 'fecha_inicio', 'inicio'],
+        'FECHA_VENCIMIENTO': ['fecha_vencimiento', 'vencimiento', 'fecha_limite', 'fecha_fin', 'fin']
     }
     
     suggested_mapping = {}
@@ -75,6 +76,60 @@ def suggest_column_mapping(df_columns: List[str]) -> Dict[str, str]:
                     break
     
     return suggested_mapping
+
+
+def convert_monetary_value(value) -> float:
+    """
+    Convierte un valor monetario a float, manejando diferentes formatos.
+    Maneja casos como: '214.012', '214,012.50', '214.012,50', etc.
+    """
+    if pd.isna(value) or value == '' or value is None:
+        return 0.0
+    
+    # Convertir a string si no lo es
+    str_value = str(value).strip()
+    
+    # Si el valor ya es numérico, simplemente convertirlo
+    try:
+        return float(str_value)
+    except ValueError:
+        pass
+    
+    # Remover espacios en blanco
+    str_value = str_value.replace(' ', '')
+    
+    # Caso 1: Formato con punto como separador de miles y coma como decimal (1.234,56)
+    if ',' in str_value and '.' in str_value:
+        # Determinar cuál es el separador decimal
+        last_dot_pos = str_value.rfind('.')
+        last_comma_pos = str_value.rfind(',')
+        
+        if last_comma_pos > last_dot_pos:
+            # Coma es separador decimal
+            str_value = str_value.replace('.', '')  # Remover puntos (separadores de miles)
+            str_value = str_value.replace(',', '.')  # Reemplazar coma por punto decimal
+        elif last_dot_pos > last_comma_pos:
+            # Punto es separador decimal
+            str_value = str_value.replace(',', '')  # Remover comas (separadores de miles)
+    
+    # Caso 2: Formato con solo comas (1,234.56 o 1234,56)
+    elif ',' in str_value:
+        # Si hay más de una aparición de coma o si hay punto después de la coma
+        comma_count = str_value.count(',')
+        if comma_count == 1:
+            parts = str_value.split(',')
+            if len(parts) == 2 and len(parts[1]) <= 2:  # Posible formato decimal
+                # Suponer que es formato americano con coma como separador de miles
+                str_value = str_value.replace(',', '')
+    
+    # Remover cualquier carácter no numérico excepto el punto decimal
+    str_value = re.sub(r'[^\d.-]', '', str_value)
+    
+    try:
+        return float(str_value)
+    except ValueError:
+        # Si todo falla, devolver 0.0
+        return 0.0
 
 
 async def process_import_file(
@@ -123,6 +178,44 @@ async def process_import_file(
             status_code=400, 
             detail=f"Columnas requeridas faltantes: {', '.join(missing_fields)}"
         )
+    
+    # Validar que los campos requeridos no tengan valores nulos
+    for field in required_fields:
+        if field in column_mapping:
+            col_name = column_mapping[field]
+            if df[col_name].isnull().any() or (df[col_name] == '').any():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La columna '{col_name}' (mapeada a '{field}') contiene valores vacíos o nulos"
+                )
+    
+    # Validar que VALOR_TOTAL sea numérico
+    if 'VALOR_TOTAL' in column_mapping:
+        total_col = column_mapping['VALOR_TOTAL']
+        # Validar valores monetarios
+        for idx, value in enumerate(df[total_col]):
+            try:
+                converted_val = convert_monetary_value(value)
+                if pd.isna(converted_val):
+                    raise ValueError(f"Valor no convertible: {value}")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Fila {idx + 2}: La columna '{total_col}' (mapeada a 'VALOR_TOTAL') contiene un valor no convertible: '{value}'"
+                )
+    
+    # Validar fechas si están presentes
+    date_fields = ['FECHA_EMISION', 'FECHA_VENCIMIENTO']
+    for field in date_fields:
+        if field in column_mapping:
+            date_col = column_mapping[field]
+            try:
+                df[date_col] = pd.to_datetime(df[date_col], errors='raise')
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La columna '{date_col}' (mapeada a '{field}') contiene fechas con formato inválido"
+                )
     
     # Guardar plantilla si se solicita
     if save_template and template_name:
@@ -186,6 +279,10 @@ async def process_import_file(
                         if pd.notna(value):
                             client_data[field] = str(value).strip()
                 
+                # Si no se especificó departamento, usar un valor por defecto
+                if 'department' not in client_data:
+                    client_data['department'] = 'Santander'  # Por defecto para Girón
+                
                 client = Client(**client_data)
                 session.add(client)
                 session.commit()
@@ -207,10 +304,14 @@ async def process_import_file(
             existing_obligation = session.exec(statement).first()
             
             if not existing_obligation:
+                # Convertir valor total usando la función de conversión mejorada
+                valor_total_raw = row[column_mapping['VALOR_TOTAL']]
+                valor_total = convert_monetary_value(valor_total_raw)
+                
                 obligation_data = {
                     'numero_obligacion': numero_obligacion,
-                    'vigencia': str(row.get(column_mapping.get('VIGENCIA'), '2024')),
-                    'valor_total': float(row[column_mapping['VALOR_TOTAL']]),
+                    'vigencia': str(row.get(column_mapping.get('VIGENCIA'), '2026')),  # Valor por defecto para Girón
+                    'valor_total': valor_total,
                     'client_id': client.id,
                     'tenant_id': tenant_id
                 }
@@ -218,15 +319,15 @@ async def process_import_file(
                 # Campos opcionales de obligación
                 if 'CAPITAL' in column_mapping and column_mapping['CAPITAL'] in df.columns:
                     val = row[column_mapping['CAPITAL']]
-                    obligation_data['capital'] = float(val) if pd.notna(val) else 0
+                    obligation_data['capital'] = convert_monetary_value(val) if pd.notna(val) else 0
                 
                 if 'INTERESES' in column_mapping and column_mapping['INTERESES'] in df.columns:
                     val = row[column_mapping['INTERESES']]
-                    obligation_data['intereses'] = float(val) if pd.notna(val) else 0
+                    obligation_data['intereses'] = convert_monetary_value(val) if pd.notna(val) else 0
                 
                 if 'MORA' in column_mapping and column_mapping['MORA'] in df.columns:
                     val = row[column_mapping['MORA']]
-                    obligation_data['mora'] = float(val) if pd.notna(val) else 0
+                    obligation_data['mora'] = convert_monetary_value(val) if pd.notna(val) else 0
                 
                 # Fechas
                 if 'FECHA_EMISION' in column_mapping and column_mapping['FECHA_EMISION'] in df.columns:
@@ -307,3 +408,106 @@ async def save_import_template(
     session.refresh(template)
     
     return template
+
+
+def get_template_preview(template: ImportTemplate) -> Dict:
+    """Obtener una vista previa de la plantilla de importación."""
+    return {
+        'id': template.id,
+        'name': template.name,
+        'description': template.description,
+        'is_default': template.is_default,
+        'is_active': template.is_active,
+        'column_mapping': template.column_mapping,
+        'created_at': template.created_at,
+        'updated_at': template.updated_at,
+        'mapped_columns_count': len(template.column_mapping) if template.column_mapping else 0,
+        'mapped_columns': list(template.column_mapping.keys()) if template.column_mapping else [],
+        'mapped_system_fields': list(template.column_mapping.values()) if template.column_mapping else []
+    }
+
+
+def validate_import_file_content(df: pd.DataFrame, column_mapping: Dict[str, str]) -> Dict:
+    """
+    Valida el contenido del archivo de importación antes de procesarlo.
+    
+    Args:
+        df: DataFrame con los datos del archivo
+        column_mapping: Diccionario con el mapeo de columnas
+        
+    Returns:
+        Dict con resultados de la validación
+    """
+    validation_results = {
+        'valid': True,
+        'errors': [],
+        'warnings': [],
+        'summary': {
+            'total_rows': len(df),
+            'columns_count': len(df.columns),
+            'mapped_columns_count': len(column_mapping)
+        }
+    }
+    
+    # Validar campos requeridos
+    required_fields = ['IDENTIFICACION', 'NOMBRE', 'NUMERO_OBLIGACION', 'VALOR_TOTAL']
+    
+    for field in required_fields:
+        if field not in column_mapping:
+            validation_results['valid'] = False
+            validation_results['errors'].append(f"Campo requerido '{field}' no está mapeado")
+        else:
+            col_name = column_mapping[field]
+            if col_name not in df.columns:
+                validation_results['valid'] = False
+                validation_results['errors'].append(f"La columna '{col_name}' (mapeada a '{field}') no existe en el archivo")
+            else:
+                # Verificar si hay valores nulos o vacíos en campos requeridos
+                null_count = df[col_name].isnull().sum()
+                empty_count = (df[col_name] == '').sum()
+                
+                if null_count > 0 or empty_count > 0:
+                    validation_results['valid'] = False
+                    validation_results['errors'].append(
+                        f"La columna '{col_name}' (mapeada a '{field}') tiene {null_count} valores nulos y {empty_count} valores vacíos"
+                    )
+    
+    # Validar tipos de datos
+    if 'VALOR_TOTAL' in column_mapping:
+        col_name = column_mapping['VALOR_TOTAL']
+        # Validar cada valor individualmente usando la función convert_monetary_value
+        for idx, value in enumerate(df[col_name]):
+            try:
+                converted_val = convert_monetary_value(value)
+                if pd.isna(converted_val):
+                    validation_results['valid'] = False
+                    validation_results['errors'].append(f"Fila {idx + 2}: Valor no convertible en '{col_name}' (mapeada a 'VALOR_TOTAL'): '{value}'")
+            except Exception:
+                validation_results['valid'] = False
+                validation_results['errors'].append(f"Fila {idx + 2}: Error al convertir valor en '{col_name}' (mapeada a 'VALOR_TOTAL'): '{value}'")
+    
+    # Validar fechas si están presentes
+    date_fields = ['FECHA_EMISION', 'FECHA_VENCIMIENTO']
+    for field in date_fields:
+        if field in column_mapping:
+            col_name = column_mapping[field]
+            invalid_dates = df[pd.to_datetime(df[col_name], errors='coerce').isna()].shape[0]
+            if invalid_dates > 0:
+                validation_results['warnings'].append(f"La columna '{col_name}' (mapeada a '{field}') tiene {invalid_dates} fechas inválidas")
+    
+    # Validar duplicados
+    if 'IDENTIFICACION' in column_mapping and 'NUMERO_OBLIGACION' in column_mapping:
+        id_col = column_mapping['IDENTIFICACION']
+        obl_col = column_mapping['NUMERO_OBLIGACION']
+        
+        # Verificar duplicados de identificación
+        duplicated_ids = df[df.duplicated(subset=[id_col], keep=False)][id_col].unique()
+        if len(duplicated_ids) > 0:
+            validation_results['warnings'].append(f"Se encontraron {len(duplicated_ids)} identificaciones duplicadas: {list(duplicated_ids[:5])}")  # Mostrar máximo 5
+        
+        # Verificar duplicados de obligación
+        duplicated_obls = df[df.duplicated(subset=[obl_col], keep=False)][obl_col].unique()
+        if len(duplicated_obls) > 0:
+            validation_results['warnings'].append(f"Se encontraron {len(duplicated_obls)} números de obligación duplicados: {list(duplicated_obls[:5])}")  # Mostrar máximo 5
+    
+    return validation_results

@@ -1,0 +1,102 @@
+/* Sobrescrituras y personalizaciones de componentes */
+
+/* Estilos para PrimeVue */
+.p-toast {
+  width: auto;
+  min-width: 300px;
+}
+
+.p-toast-message {
+  margin: 0.5rem 0;
+}
+
+/* Personalización del menú */
+.p-menubar {
+  border: none;
+  border-radius: 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Personalización del panel */
+.p-panel {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+/* Personalización del card */
+.p-card {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+}
+
+/* Personalización del dropdown */
+.p-dropdown {
+  min-width: 12rem;
+}
+
+/* Personalización del datatable */
+.p-datatable .p-datatable-tbody > tr {
+  transition: background-color 0.2s;
+}
+
+.p-datatable .p-datatable-tbody > tr:hover {
+  background-color: #f8f9fa;
+}
+
+/* Personalización del button */
+.p-button {
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Estilos para formularios */
+.p-field {
+  margin-bottom: 1.5rem;
+}
+
+.p-inputgroup-addon {
+  background-color: #f8f9fa;
+  border-color: var(--border-color);
+}
+
+/* Personalización del dialog */
+.p-dialog {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.p-dialog .p-dialog-header {
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem;
+}
+
+.p-dialog .p-dialog-content {
+  padding: 1rem;
+}
+
+/* Personalización del sidebar */
+.p-sidebar {
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Estilos para el layout sidebar */
+.layout-sidebar {
+  background: var(--sidebar-bg);
+  color: white;
+}
+
+/* Estilos para el topbar */
+.layout-topbar {
+  background: var(--header-bg);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Estilos para tooltips */
+.p-tooltip .p-tooltip-text {
+  background: #2c3e50;
+  color: white;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}

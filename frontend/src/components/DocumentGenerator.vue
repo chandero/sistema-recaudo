@@ -1,10 +1,11 @@
 <template>
   <Dialog 
-    v-model:visible="visible" 
+    :visible="visible" 
     :style="{ width: '700px' }" 
     :header="dialogTitle" 
     :modal="true"
     @hide="$emit('update:visible', false)"
+    @after-hide="$emit('update:visible', false)"
   >
     <FormWrapper
       :title="formTitle"
@@ -135,7 +136,7 @@
             v-model="documentData.template" 
             :options="notificationTemplates" 
             optionLabel="name" 
-            optionValue="value"
+            optionValue="value",
           />
         </div>
         

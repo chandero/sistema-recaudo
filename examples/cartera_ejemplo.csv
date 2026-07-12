@@ -1,0 +1,11 @@
+identificacion,nombre,direccion,telefono,email,ciudad,departamento,numero_obligacion,vigencia,valor_total,capital,intereses,mora,fecha_emision,fecha_vencimiento
+123456789,"Juan Pérez","Calle 123","3001234567","juan@example.com","Bogotá","Cundinamarca","OBG001","2024",1000000,800000,150000,50000,2024-06-11,2024-08-10
+987654321,"María López","Avenida 456","3012345678","maria@example.com","Medellín","Antioquia","OBG002","2024",1500000,1200000,225000,75000,2024-05-12,2024-09-09
+111111111,"Carlos García","Carrera 789","3023456789","carlos@example.com","Cali","Valle del Cauca","OBG003","2024",2000000,1600000,300000,100000,2024-04-13,2024-10-09
+222222222,"Ana Martínez","Diagonal 012","3034567890","ana@example.com","Barranquilla","Atlántico","OBG004","2024",2500000,2000000,375000,125000,2024-03-14,2024-11-08
+333333333,"Pedro Rodríguez","Transversal 345","3045678901","pedro@example.com","Cartagena","Bolívar","OBG005","2024",3000000,2400000,450000,150000,2024-02-11,2024-12-08
+444444444,"Lucía Sánchez","Circular 678","3056789012","lucia@example.com","Cúcuta","Norte de Santander","OBG006","2024",3500000,2800000,525000,175000,2024-01-12,2025-01-07
+555555555,"José Hernández","Calle 901","3067890123","jose@example.com","Ibagué","Tolima","OBG007","2024",4000000,3200000,600000,200000,2023-12-13,2025-02-06
+666666666,"Elena Gómez","Avenida 234","3078901234","elena@example.com","Pereira","Risaralda","OBG008","2024",4500000,3600000,675000,225000,2023-11-14,2025-03-08
+777777777,"Miguel Díaz","Carrera 567","3089012345","miguel@example.com","Santa Marta","Magdalena","OBG009","2024",5000000,4000000,750000,250000,2023-10-15,2025-04-07
+888888888,"Sofía Fernández","Diagonal 890","3090123456","sofia@example.com","Villavicencio","Meta","OBG010","2024",5500000,4400000,825000,275000,2023-09-16,2025-05-07

@@ -33,6 +33,27 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async fetchCurrentUser() {
+      if (!this.token) {
+        return null;
+      }
+      
+      try {
+        // Intentar obtener el usuario actual desde el backend
+        const response = await authService.getCurrentUser();
+        this.user = response.data;
+        this.role = response.data?.role || 'user';
+        return this.user;
+      } catch (error) {
+        console.error('Error fetching current user:', error);
+        // Si hay un error de autenticación, limpiar el token
+        if (error.response?.status === 401) {
+          this.logout();
+        }
+        return null;
+      }
+    },
+
     logout() {
       authService.logout()
       this.token = null
