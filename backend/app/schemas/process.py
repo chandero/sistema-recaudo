@@ -17,8 +17,6 @@ class CobroProcessBase(BaseModel):
 
 class CobroProcessCreate(CobroProcessBase):
     current_state_id: int
-    client_ids: List[int] = []
-    obligation_ids: List[int] = []
 
 
 class CobroProcessUpdate(BaseModel):

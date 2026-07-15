@@ -1,0 +1,6 @@
+identificacion,nombre,direccion,telefono,email,ciudad,departamento,numero_obligacion,vigencia,valor_total,capital,intereses,mora,fecha_emision,fecha_vencimiento
+123456789,"Juan Pérez","Calle 123 # 45-67","3001234567","juan.perez@example.com","Bogotá","Cundinamarca","OBG001","2024",1000000,800000,150000,50000,2024-01-15,2024-12-31
+987654321,"María López","Avenida Siempre Viva 123","3012345678","maria.lopez@example.com","Medellín","Antioquia","OBG002","2024",1500000,1200000,225000,75000,2024-02-20,2025-01-31
+111111111,"Carlos García","Carrera 56 # 78-90","3023456789","carlos.garcia@example.com","Cali","Valle del Cauca","OBG003","2024",2000000,1600000,300000,100000,2024-03-10,2025-02-28
+222222222,"Ana Martínez","Diagonal 23 # 45-67","3034567890","ana.martinez@example.com","Barranquilla","Atlántico","OBG004","2024",2500000,2000000,375000,125000,2024-04-05,2025-03-31
+333333333,"Pedro Rodríguez","Transversal 89 # 12-34","3045678901","pedro.rodriguez@example.com","Cartagena","Bolívar","OBG005","2024",3000000,2400000,450000,150000,2024-05-12,2025-04-30

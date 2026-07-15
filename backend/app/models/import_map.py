@@ -1,23 +1,23 @@
-from sqlalchemy import Column, Integer, String, JSON, ForeignKey, Boolean
-from sqlalchemy.orm import relationship
-from app.db.base_class import Base
-from app.models.tenant import Tenant
+from sqlmodel import SQLModel, Field, Relationship, Column, JSON
+from typing import Optional, List, Dict, Any
+from datetime import datetime
 
-class ImportMappingTemplate(Base):
-    """Plantilla de mapeo de columnas para importaciones Excel/CSV"""
+
+class ImportMappingTemplateBase(SQLModel):
+    name: str = Field(..., index=True)
+    description: Optional[str] = Field(default=None, max_length=500)
+    mapping_config: Dict[str, Any] = Field(..., sa_column=Column(JSON))
+    supported_fields: List[str] = Field(default=[], sa_column=Column(JSON))
+    is_active: bool = Field(default=True)
+
+
+class ImportMappingTemplate(ImportMappingTemplateBase, table=True):
     __tablename__ = "import_mapping_templates"
 
-    id = Column(Integer, primary_key=True, index=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
-    name = Column(String, index=True, nullable=False)  # Ej: "Importación Alumbrado 2024"
-    description = Column(String, nullable=True)
-    
-    # Estructura JSON: {"columna_archivo": "campo_sistema", ...}
-    mapping_config = Column(JSON, nullable=False)
-    
-    # Campos estándar del sistema que soporta esta plantilla
-    supported_fields = Column(JSON, nullable=False, default=list) 
-    
-    is_active = Column(Boolean, default=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(..., foreign_key="tenants.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    tenant = relationship("Tenant", back_populates="import_templates")
+    # Relaciones
+    tenant: Optional["Tenant"] = Relationship(back_populates="import_mapping_templates")
+    # batches: List["ImportBatch"] = Relationship(back_populates="mapping_template")  # TODO: Corregir foreign_key

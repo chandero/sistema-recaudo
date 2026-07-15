@@ -1,122 +1,161 @@
-"""
-Servicio para generación de documentos (Word a PDF)
-Maneja plantillas DOCX con variables Jinja2 y genera salida PDF
-"""
-import os
-import io
-import zipfile
-from typing import List, Dict, Any
-from docxtpl import DocxTemplate
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.utils import ImageReader
-import tempfile
-import subprocess
-from pathlib import Path
+from typing import List, Optional
+from sqlalchemy.orm import Session
+from app.repositories import DocumentRepository
+from app.schemas.document import DocumentCreate, DocumentUpdate
+from app.models.document import Document
 
-# Nota: Para conversión real DOCX -> PDF en producción se recomienda LibreOffice headless o Pandoc.
-# Aquí implementamos una lógica híbrida: llenado de DOCX y simulación/estructura para PDF.
 
-class DocumentGenerationService:
+class DocumentService:
+    """
+    Servicio para operaciones relacionadas con documentos.
+    Este servicio actúa como intermediario entre las capas de presentación y persistencia,
+    utilizando el repositorio correspondiente para las operaciones de base de datos.
+    """
     
-    @staticmethod
-    def render_template(template_path: str, context: Dict[str, Any], output_path: str) -> str:
-        """
-        Rellena una plantilla DOCX con datos y la guarda.
-        Si se requiere PDF, aquí se haría la conversión.
-        """
-        try:
-            doc = DocxTemplate(template_path)
-            doc.render(context)
-            doc.save(output_path)
-            return output_path
-        except Exception as e:
-            raise Exception(f"Error al generar documento: {str(e)}")
+    def __init__(self, db: Session):
+        self.repository = DocumentRepository(db)
 
-    @staticmethod
-    def convert_to_pdf(docx_path: str, pdf_path: str) -> bool:
+    def get_document(self, document_id: int) -> Optional[Document]:
         """
-        Convierte DOCX a PDF.
-        En entorno Docker real, esto llamaría a libreoffice --headless.
-        Aquí simulamos el éxito para el MVP o usamos reportlab si es texto plano.
-        """
-        # Simulación para MVP: Copiar el archivo o crear un PDF básico
-        # En producción: 
-        # subprocess.run(['libreoffice', '--headless', '--convert-to', 'pdf', docx_path, '--outdir', os.path.dirname(pdf_path)])
+        Obtiene un documento por su ID.
         
-        try:
-            # Intento de conversión real si existe libreoffice
-            result = subprocess.run(
-                ["libreoffice", "--headless", "--convert-to", "pdf", docx_path, "--outdir", os.path.dirname(pdf_path)],
-                capture_output=True,
-                timeout=30
-            )
-            if result.returncode == 0:
-                # Mover el archivo generado al nombre deseado
-                generated_pdf = docx_path.replace(".docx", ".pdf")
-                if os.path.exists(generated_pdf):
-                    os.rename(generated_pdf, pdf_path)
-                    return True
-        except Exception:
-            pass
-        
-        # Fallback: Crear un PDF simple indicando que el documento está listo (para demo sin LibreOffice)
-        c = canvas.Canvas(pdf_path, pagesize=letter)
-        c.drawString(100, 750, "Documento Generado Exitosamente")
-        c.drawString(100, 730, f"Origen: {os.path.basename(docx_path)}")
-        c.drawString(100, 710, "(Nota: Conversión completa requiere LibreOffice instalado en el contenedor)")
-        c.save()
-        return True
-
-    @staticmethod
-    def generate_batch(templates: List[Dict], processes: List[Dict], output_dir: str) -> str:
+        Args:
+            document_id: ID del documento
+            
+        Returns:
+            Documento con el ID especificado o None si no se encuentra
         """
-        Genera un lote de documentos y crea un ZIP.
-        templates: Lista de diccionarios con ruta_plantilla y contexto
-        processes: Lista de procesos con sus datos
+        return self.repository.get(document_id)
+
+    def get_documents(self, skip: int = 0, limit: int = 100) -> List[Document]:
         """
-        zip_filename = os.path.join(output_dir, "lote_documentos.zip")
+        Obtiene una lista de documentos con opción de paginación.
         
-        with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for i, proc in enumerate(processes):
-                # Asumimos una plantilla base para el ejemplo
-                # En realidad, se selecciona la plantilla según el tipo de documento
-                template_path = templates[0]['path'] if templates else None
-                
-                if not template_path or not os.path.exists(template_path):
-                    continue
+        Args:
+            skip: Número de registros a saltar (para paginación)
+            limit: Límite de registros a devolver
+            
+        Returns:
+            Lista de documentos
+        """
+        return self.repository.get_all(skip, limit)
 
-                context = {
-                    'cliente_nombre': proc.get('cliente_nombre', 'N/A'),
-                    'cliente_identificacion': proc.get('cliente_identificacion', 'N/A'),
-                    'obligacion_numero': proc.get('obligacion_numero', 'N/A'),
-                    'valor_total': proc.get('valor_total', 0),
-                    'radicado': proc.get('radicado', 'PENDIENTE'),
-                    'resolucion': proc.get('resolucion', 'PENDIENTE'),
-                    'fecha_emision': proc.get('fecha_emision', ''),
-                    'entidad_nombre': proc.get('entidad_nombre', 'Entidad Pública'),
-                }
+    def get_documents_by_client(self, client_id: int) -> List[Document]:
+        """
+        Obtiene todos los documentos de un cliente específico.
+        
+        Args:
+            client_id: ID del cliente
+            
+        Returns:
+            Lista de documentos del cliente
+        """
+        return self.repository.get_by_client(client_id)
 
-                temp_docx = os.path.join(output_dir, f"temp_{i}.docx")
-                temp_pdf = os.path.join(output_dir, f"doc_{proc.get('radicado', i)}.pdf")
-                
-                try:
-                    # 1. Renderizar DOCX
-                    rendered_docx = DocumentGenerationService.render_template(template_path, context, temp_docx)
-                    
-                    # 2. Convertir a PDF
-                    DocumentGenerationService.convert_to_pdf(rendered_docx, temp_pdf)
-                    
-                    # 3. Agregar al ZIP
-                    if os.path.exists(temp_pdf):
-                        zipf.write(temp_pdf, os.path.basename(temp_pdf))
-                        
-                        # Limpieza
-                        os.remove(temp_docx)
-                        os.remove(temp_pdf)
-                        
-                except Exception as e:
-                    print(f"Error generando documento {i}: {e}")
-                    continue
+    def get_documents_by_obligation(self, obligation_id: int) -> List[Document]:
+        """
+        Obtiene todos los documentos relacionados con una obligación específica.
+        
+        Args:
+            obligation_id: ID de la obligación
+            
+        Returns:
+            Lista de documentos relacionados con la obligación
+        """
+        return self.repository.get_by_obligation(obligation_id)
 
-        return zip_filename
+    def get_documents_by_type(self, doc_type: str) -> List[Document]:
+        """
+        Obtiene documentos por tipo.
+        
+        Args:
+            doc_type: Tipo de documento
+            
+        Returns:
+            Lista de documentos del tipo especificado
+        """
+        return self.repository.get_by_type(doc_type)
+
+    def get_documents_by_status(self, status: str) -> List[Document]:
+        """
+        Obtiene documentos por estado.
+        
+        Args:
+            status: Estado del documento
+            
+        Returns:
+            Lista de documentos con el estado especificado
+        """
+        return self.repository.get_by_status(status)
+
+    def get_documents_by_date_range(self, start_date: str, end_date: str) -> List[Document]:
+        """
+        Obtiene documentos dentro de un rango de fechas.
+        
+        Args:
+            start_date: Fecha de inicio
+            end_date: Fecha de fin
+            
+        Returns:
+            Lista de documentos dentro del rango de fechas
+        """
+        return self.repository.get_by_date_range(start_date, end_date)
+
+    def create_document(self, document_create: DocumentCreate) -> Document:
+        """
+        Crea un nuevo documento.
+        
+        Args:
+            document_create: Datos del documento a crear
+            
+        Returns:
+            Documento creado
+        """
+        return self.repository.create_document(document_create)
+
+    def update_document(self, document_id: int, document_update: DocumentUpdate) -> Optional[Document]:
+        """
+        Actualiza un documento existente.
+        
+        Args:
+            document_id: ID del documento a actualizar
+            document_update: Datos actualizados del documento
+            
+        Returns:
+            Documento actualizado o None si no se encuentra
+        """
+        return self.repository.update_document(document_id, document_update)
+
+    def delete_document(self, document_id: int) -> bool:
+        """
+        Elimina un documento por su ID.
+        
+        Args:
+            document_id: ID del documento a eliminar
+            
+        Returns:
+            True si se eliminó correctamente, False si no se encontró
+        """
+        return self.repository.delete(document_id)
+
+    def get_documents_by_client_and_type(self, client_id: int, doc_type: str) -> List[Document]:
+        """
+        Obtiene documentos de un cliente específico por tipo.
+        
+        Args:
+            client_id: ID del cliente
+            doc_type: Tipo de documento
+            
+        Returns:
+            Lista de documentos del cliente y tipo especificados
+        """
+        return self.repository.get_documents_by_client_and_type(client_id, doc_type)
+
+    def count_documents(self) -> int:
+        """
+        Cuenta el número total de documentos.
+        
+        Returns:
+            Número total de documentos
+        """
+        return self.repository.count()

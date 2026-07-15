@@ -633,12 +633,69 @@ const onFileSelect = (event) => {
   selectedFile.value = event.files[0]
 }
 
+const extractVariablesFromTemplate = async () => {
+  if (!selectedFile.value) {
+    alert('Por favor seleccione un archivo de plantilla primero');
+    return;
+  }
+
+  // Mostrar mensaje de carga
+  console.log('Analizando plantilla para extraer variables...');
+  
+  // Subir temporalmente el archivo para análisis
+  const formData = new FormData();
+  formData.append('file', selectedFile.value);
+  
+  try {
+    // Primero, subir el archivo a un endpoint temporal para análisis
+    // En lugar de eso, primero debemos guardar la plantilla y luego analizarla
+    // Pero para análisis previo al guardado, podríamos tener un endpoint especial
+    
+    // Alternativa: mostrar instrucciones al usuario
+    alert('Para extraer variables automáticamente, guarde la plantilla primero y luego use la opción de análisis en la lista de plantillas.');
+  } catch (error) {
+    console.error('Error extrayendo variables de la plantilla:', error);
+    alert('Hubo un error al intentar extraer las variables de la plantilla.');
+  }
+}
+
 const viewTemplate = (template) => {
   console.log('Ver plantilla:', template)
 }
 
 const downloadTemplate = (template) => {
-  console.log('Descargar plantilla:', template)
+  // Crear URL temporal para descarga
+  if (template.file_url) {
+    window.open(template.file_url, '_blank')
+  } else {
+    // Aquí se implementaría la lógica para descargar la plantilla desde el backend
+    // por ejemplo, haciendo una petición GET a /documents/templates/{id}/download
+    // console.log('Descargar plantilla:', template)  // Eliminado para evitar impresión innecesaria
+    if (template.id) {
+      // Descargar la plantilla usando el servicio API
+      documentService.downloadTemplate(template.id)
+        .then(response => {
+          // Crear un blob a partir de la respuesta
+          const blob = new Blob([response.data], { type: response.headers['content-type'] });
+          const url = window.URL.createObjectURL(blob);
+          
+          // Crear un enlace temporal para descargar el archivo
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', template.name + (template.name.endsWith('.docx') || template.name.endsWith('.pdf') ? '' : '.docx')); // Ajustar extensión según tipo
+          document.body.appendChild(link);
+          link.click();
+          
+          // Limpiar el enlace temporal
+          link.parentNode.removeChild(link);
+          window.URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+          console.error('Error descargando la plantilla:', error);
+          // Aquí podrías mostrar un mensaje de error al usuario
+        });
+    }
+  }
 }
 
 const confirmDeleteTemplate = (template) => {

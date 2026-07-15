@@ -4,44 +4,63 @@ import os
 
 
 class Settings(BaseSettings):
-    # Application
-    APP_NAME: str = "Sistema de Cobro de Cartera"
-    APP_VERSION: str = "0.1.0"
-    DEBUG: bool = True
+    # Configuración de la base de datos
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
     
-    # Database
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"
-    POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: str = "5432"
-    POSTGRES_DB: str = "cartera_db"
-    
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-    
-    @property
-    def ASYNC_DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-    
-    # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production-min-32-chars"
+    # Configuración de JWT
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     
-    # Redis/Celery
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    # Configuración de la aplicación
+    APP_NAME: str = os.getenv("APP_NAME", "Sistema de Recaudo")
+    APP_VERSION: str = os.getenv("APP_VERSION", "0.1.0")
+    API_V1_STR: str = "/api/v1"
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     
-    # CORS
-    CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:8080"]
+    # Configuración del entorno
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # Configuración de CORS
+    BACKEND_CORS_ORIGINS: list = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+    ]
+    CORS_ORIGINS: list = BACKEND_CORS_ORIGINS
+    
+    # Configuración de logging
+    LOG_TO_FILE: bool = os.getenv("LOG_TO_FILE", "true").lower() == "true"
+    LOG_FILE_PATH: str = os.getenv("LOG_FILE_PATH", "/app/logs/sistema_recaudo.log")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_FORMAT: str = os.getenv("LOG_FORMAT", "json")  # json o text
+    LOG_MAX_SIZE_MB: int = int(os.getenv("LOG_MAX_SIZE_MB", "100"))
+    LOG_BACKUP_COUNT: int = int(os.getenv("LOG_BACKUP_COUNT", "5"))
+    
+    # Configuración de auditoría
+    AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
+    API_LOG_ENABLED: bool = os.getenv("API_LOG_ENABLED", "true").lower() == "true"
+    DB_LOG_ENABLED: bool = os.getenv("DB_LOG_ENABLED", "true").lower() == "true"
+    AUTH_LOG_ENABLED: bool = os.getenv("AUTH_LOG_ENABLED", "true").lower() == "true"
+    
+    # Configuración de servicios externos
+    SMTP_SERVER: Optional[str] = os.getenv("SMTP_SERVER")
+    SMTP_PORT: Optional[int] = int(os.getenv("SMTP_PORT", "587")) if os.getenv("SMTP_PORT") else None
+    SMTP_USER: Optional[str] = os.getenv("SMTP_USER")
+    SMTP_PASSWORD: Optional[str] = os.getenv("SMTP_PASSWORD")
+    
+    # Configuración de almacenamiento de archivos
+    UPLOAD_FOLDER: str = os.getenv("UPLOAD_FOLDER", "./uploads")
+    MAX_CONTENT_LENGTH: int = int(os.getenv("MAX_CONTENT_LENGTH", "16000000"))  # 16MB
+    ALLOWED_EXTENSIONS: set = {"xlsx", "xls", "csv", "pdf", "docx", "doc", "jpg", "jpeg", "png"}
+    
+    # Configuración de seguridad
+    PASSWORD_MIN_LENGTH: int = int(os.getenv("PASSWORD_MIN_LENGTH", "8"))
+    PASSWORD_REQUIRE_SPECIAL_CHARS: bool = os.getenv("PASSWORD_REQUIRE_SPECIAL_CHARS", "true").lower() == "true"
+    PASSWORD_REQUIRE_NUMBERS: bool = os.getenv("PASSWORD_REQUIRE_NUMBERS", "true").lower() == "true"
+    PASSWORD_REQUIRE_UPPERCASE: bool = os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
 
 
 settings = Settings()

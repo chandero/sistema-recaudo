@@ -1,28 +1,24 @@
 <template>
-  <Layout>
-    <div class="placeholder-view">
-      <Card class="text-center py-5">
-        <template #header>
-          <div class="pt-4">
-            <i class="pi pi-building text-6xl text-color-secondary"></i>
-          </div>
-        </template>
-        <template #title>
-          {{ pageTitle }}
-        </template>
-        <template #content>
-          <p class="m-0 text-color-secondary">
-            Esta funcionalidad estará disponible próximamente.
-          </p>
-        </template>
-      </Card>
-    </div>
-  </Layout>
+  <div class="placeholder-view">
+    <Card class="text-center py-5">
+      <template #header>
+        <div class="pt-4">
+          <i class="pi pi-building text-6xl text-color-secondary"></i>
+        </div>
+      </template>
+      <template #title>
+        {{ pageTitle }}
+      </template>
+      <template #content>
+        <p class="m-0 text-color-secondary">
+          Esta funcionalidad estará disponible próximamente.
+        </p>
+      </template>
+    </Card>
+  </div>
 </template>
 
 <script setup>
-import Layout from '../components/Layout.vue'
-
 defineProps({
   pageTitle: {
     type: String,

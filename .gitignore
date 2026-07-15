@@ -1,1 +1,29 @@
-Nothing should be ignored based on the provided file changes. The only added file is `generate_project.py`, which appears to be a Python source file and should not be ignored.
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Bases de datos, respaldos y archivos de ejecución
+*.db
+*.sqlite
+*.sqlite3
+backups/
+backend/backups/
+backend/app/uploads/generated/
+backend/logs/
+*.log
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Entorno y editor
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+.lingma/

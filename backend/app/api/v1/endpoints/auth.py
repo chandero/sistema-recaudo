@@ -1,85 +1,134 @@
+import re
+
+def validate_password(password: str) -> bool:
+    """Valida que la contraseña cumpla con los requisitos de seguridad"""
+    # Ejemplo: al menos 8 caracteres, una letra mayúscula, una letra minúscula y un número
+    pattern = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$"
+    return re.match(pattern, password) is not None
+from sqlalchemy.orm import Session
+from app.core.security import create_access_token
+from app.services.user_service import UserService
+
+def authenticate_user(db: Session, username: str, password: str):
+    """Autentica un usuario con su nombre de usuario y contraseña"""
+    user_service = UserService(db)
+    return user_service.authenticate_user(username, password)
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import Session, select
-from datetime import timedelta
-from app.core.database import get_session
-from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token
-from app.core.dependencies import get_current_user
+from sqlalchemy.orm import Session
+from typing import Any
+
+from app.core.database import get_db  # Corregido: era app.database
+from app.services.user_service import UserService
+from app.schemas.auth import Token, UserCreate, UserLogin, UserResponse
+from app.core.security import create_access_token
+from app.core.config import settings
+from app.core.dependencies import get_current_active_user
 from app.models.user import User
-from app.schemas.auth import Token, UserCreate, UserResponse
 
 router = APIRouter()
 
 
-@router.post("/login", response_model=Token)
-async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    session: Session = Depends(get_session)
-):
-    statement = select(User).where(User.username == form_data.username)
-    user = session.exec(statement).first()
-    
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    
-    access_token_expires = timedelta(minutes=30)
-    access_token = create_access_token(
-        data={"sub": user.id, "tenant_id": user.tenant_id, "username": user.username},
-        expires_delta=access_token_expires
-    )
-    
-    refresh_token = create_refresh_token(
-        data={"sub": user.id, "tenant_id": user.tenant_id}
-    )
-    
-    return Token(access_token=access_token, refresh_token=refresh_token)
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+def build_token_response(user) -> dict:
+    user_role = user.role.value if hasattr(user.role, "value") else user.role
+    access_token = create_access_token(data={
+        "sub": str(user.id),
+        "user_id": user.id,
+        "tenant_id": user.tenant_id,
+        "role": user_role,
+    })
+    return {
+        "access_token": access_token,
+        "refresh_token": "",
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+            "role": user_role,
+            "tenant_id": user.tenant_id,
+            "is_platform_admin": user.is_platform_admin,
+        },
+    }
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(
-    user_in: UserCreate,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
-):
-    # Only platform admin or tenant admin can create users
-    if not current_user.is_platform_admin and current_user.role != "TENANT_ADMIN":
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    # Check if user already exists
-    statement = select(User).where(User.username == user_in.username)
-    existing_user = session.exec(statement).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    statement = select(User).where(User.email == user_in.email)
-    existing_email = session.exec(statement).first()
-    if existing_email:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Create user
-    user = User(
-        email=user_in.email,
-        username=user_in.username,
-        full_name=user_in.full_name,
-        hashed_password=get_password_hash(user_in.password),
-        role=user_in.role,
-        tenant_id=user_in.tenant_id or current_user.tenant_id
-    )
-    
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    
+def register(user_data: UserCreate, db: Session = Depends(get_db)):
+    """Endpoint para registrar un nuevo usuario"""
+    try:
+        # Validar contraseña
+        if not validate_password(user_data.password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La contraseña no cumple con los requisitos de seguridad"
+            )
+        
+        user_service = UserService(db)
+        user = user_service.create_user(user_data)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+
+@router.post("/token", response_model=Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Endpoint para autenticar un usuario y obtener un token JWT"""
+    db = next(get_db())
+    try:
+        user = authenticate_user(db, form_data.username, form_data.password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales inválidas",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return build_token_response(user)
+    finally:
+        db.close()
+
+
+@router.post("/login", response_model=Token)
+def login_json(credentials: UserLogin, db: Session = Depends(get_db)):
+    """Endpoint JSON para autenticar desde el frontend."""
+    user = authenticate_user(db, credentials.email, credentials.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return build_token_response(user)
+
+
+@router.get("/me", response_model=UserResponse)
+def get_current_user(current_user: User = Depends(get_current_active_user)):
+    """
+    Obtiene la información del usuario actual.
+    """
+    return current_user
+
+
+@router.get("/users/{user_id}", response_model=UserResponse)
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    """
+    Obtiene un usuario por su ID.
+    """
+    service = UserService(db)
+    user = service.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
+
+
+@router.get("/users", response_model=list[UserResponse])
+def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """
+    Obtiene una lista de usuarios.
+    """
+    service = UserService(db)
+    return service.get_users(skip, limit)

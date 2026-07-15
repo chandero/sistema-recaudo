@@ -5,8 +5,12 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
-    postgresql-client \
+    libreoffice-writer-nogui \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# Crear directorio para la base de datos
+RUN mkdir -p /opt/riap/db
 
 # Copy requirements first for better caching
 COPY requirements.txt .

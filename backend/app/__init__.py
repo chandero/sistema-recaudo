@@ -1,1 +1,1 @@
-# Backend app package
+# Main application package initialization

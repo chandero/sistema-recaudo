@@ -40,8 +40,6 @@ class DocumentTemplate(DocumentTemplateBase, table=True):
 class GeneratedDocumentBase(SQLModel):
     filename: str = Field(..., min_length=1, max_length=300)
     document_type: str = Field(..., max_length=100)
-    resolution_number: Optional[str] = Field(default=None, max_length=100)
-    radicado_number: Optional[str] = Field(default=None, max_length=100)
 
 
 class GeneratedDocument(GeneratedDocumentBase, table=True):
@@ -58,6 +56,10 @@ class GeneratedDocument(GeneratedDocumentBase, table=True):
     variables_used: Optional[dict] = Field(sa_column=Column(SAJSON), default={})
     created_by: Optional[int] = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_sent: bool = Field(default=False)
+    sent_at: Optional[datetime] = Field(default=None)
+    resolution_number: Optional[str] = Field(default=None, max_length=100)
+    radicado_number: Optional[str] = Field(default=None, max_length=100)
     
     tenant: Optional["Tenant"] = Relationship()
     creator: Optional["User"] = Relationship()
