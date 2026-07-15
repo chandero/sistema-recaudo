@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { PLATFORM_ADMIN, USER_ADMIN_ROLES } from '@/utils/userManagement';
 
 // Importación de vistas
 const LoginView = () => import('@/views/LoginView.vue');
@@ -15,6 +16,8 @@ const ResolucionesView = () => import('@/views/ResolucionesView.vue');
 const DocumentosView = () => import('@/views/DocumentosView.vue');
 const ImportarView = () => import('@/views/ImportarView.vue');
 const AdminView = () => import('@/views/AdminView.vue');
+const UsuariosView = () => import('@/views/UsuariosView.vue');
+const AceptarInvitacionView = () => import('@/views/AceptarInvitacionView.vue');
 
 // Guard para rutas protegidas
 const requireAuth = async (to, from, next) => {
@@ -33,6 +36,11 @@ const requireAuth = async (to, from, next) => {
         return;
       }
     }
+    const allowedRoles = to.meta?.roles;
+    if (allowedRoles?.length && !allowedRoles.includes(authStore.currentUser?.role)) {
+      next('/dashboard');
+      return;
+    }
     next();
   }
 };
@@ -44,6 +52,11 @@ const router = createRouter({
       path: '/login',
       name: 'Login',
       component: LoginView
+    },
+    {
+      path: '/aceptar-invitacion',
+      name: 'AceptarInvitacion',
+      component: AceptarInvitacionView
     },
     {
       path: '/',
@@ -97,7 +110,16 @@ const router = createRouter({
         {
           path: 'admin',
           name: 'Admin',
-          component: AdminView
+          component: AdminView,
+          beforeEnter: requireAuth,
+          meta: { roles: [PLATFORM_ADMIN] }
+        },
+        {
+          path: 'admin/usuarios',
+          name: 'Usuarios',
+          component: UsuariosView,
+          beforeEnter: requireAuth,
+          meta: { roles: USER_ADMIN_ROLES }
         }
       ]
     },

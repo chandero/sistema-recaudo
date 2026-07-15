@@ -1,0 +1,24 @@
+# Artefactos generados en ejecución; pueden pertenecer a root y no son código fuente.
+app/uploads/generated/
+app/uploads/temp/
+
+# Cachés y resultados de pruebas.
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Entornos locales y bases de desarrollo.
+.venv/
+venv/
+*.db
+*.sqlite
+*.sqlite3
+
+# Metadatos y archivos locales que no requiere la imagen.
+.git/
+.gitignore
+.env
+logs/
+*.log

@@ -28,6 +28,8 @@ def init_db():
     from app.models.obligation import Obligation
     from app.models.process import CobroProcess
     from app.models.document import DocumentTemplate, GeneratedDocument
+    from app.models.user_audit import UserAuditLog
+    from app.models.user_invitation import UserInvitation
     
     # Crear todas las tablas
     SQLModel.metadata.create_all(engine)

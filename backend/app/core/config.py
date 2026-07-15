@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     SMTP_PORT: Optional[int] = int(os.getenv("SMTP_PORT", "587")) if os.getenv("SMTP_PORT") else None
     SMTP_USER: Optional[str] = os.getenv("SMTP_USER")
     SMTP_PASSWORD: Optional[str] = os.getenv("SMTP_PASSWORD")
+    SMTP_FROM_EMAIL: Optional[str] = os.getenv("SMTP_FROM_EMAIL")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    USER_INVITATION_EXPIRE_HOURS: int = int(os.getenv("USER_INVITATION_EXPIRE_HOURS", "24"))
     
     # Configuración de almacenamiento de archivos
     UPLOAD_FOLDER: str = os.getenv("UPLOAD_FOLDER", "./uploads")

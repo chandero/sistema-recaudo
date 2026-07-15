@@ -3,6 +3,7 @@ Servicio para envío de correos electrónicos
 Utiliza plantillas y variables dinámicas
 """
 import smtplib
+from html import escape
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any
@@ -50,9 +51,26 @@ class EmailService:
             server.sendmail(from_email, to_email, msg.as_string())
             server.quit()
             return True
-        except Exception as e:
-            print(f"Error enviando correo: {e}")
+        except Exception:
             return False
+
+    @staticmethod
+    def send_user_invitation(to_email: str, full_name: str, invitation_url: str, smtp_config: Dict[str, Any]) -> bool:
+        safe_name = escape(full_name)
+        safe_url = escape(invitation_url, quote=True)
+        html = f"""
+        <h2>Invitación al Sistema de Gestión de Cartera</h2>
+        <p>Hola {safe_name},</p>
+        <p>Se creó una invitación para que actives tu cuenta.</p>
+        <p><a href=\"{safe_url}\">Definir contraseña y activar cuenta</a></p>
+        <p>Este enlace es personal, de un solo uso y tiene vencimiento.</p>
+        """
+        return EmailService.send_email(
+            to_email=to_email,
+            subject="Invitación al Sistema de Gestión de Cartera",
+            html_content=html,
+            **smtp_config,
+        )
 
     @staticmethod
     def send_batch_emails(

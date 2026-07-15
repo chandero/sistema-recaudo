@@ -23,7 +23,7 @@ from app.services.user_service import UserService
 from app.schemas.auth import Token, UserCreate, UserLogin, UserResponse
 from app.core.security import create_access_token
 from app.core.config import settings
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import get_current_active_user, get_current_platform_admin
 from app.models.user import User
 
 router = APIRouter()
@@ -54,8 +54,12 @@ def build_token_response(user) -> dict:
 
 
 @router.post("/register", response_model=UserResponse)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Endpoint para registrar un nuevo usuario"""
+def register(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_platform_admin),
+):
+    """Registro administrativo legado. La creación normal se realiza en /users."""
     try:
         # Validar contraseña
         if not validate_password(user_data.password):
@@ -79,7 +83,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     db = next(get_db())
     try:
         user = authenticate_user(db, form_data.username, form_data.password)
-        if not user:
+        if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Credenciales inválidas",
@@ -95,7 +99,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def login_json(credentials: UserLogin, db: Session = Depends(get_db)):
     """Endpoint JSON para autenticar desde el frontend."""
     user = authenticate_user(db, credentials.email, credentials.password)
-    if not user:
+    if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas",
@@ -111,24 +115,3 @@ def get_current_user(current_user: User = Depends(get_current_active_user)):
     Obtiene la información del usuario actual.
     """
     return current_user
-
-
-@router.get("/users/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    """
-    Obtiene un usuario por su ID.
-    """
-    service = UserService(db)
-    user = service.get_user(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return user
-
-
-@router.get("/users", response_model=list[UserResponse])
-def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """
-    Obtiene una lista de usuarios.
-    """
-    service = UserService(db)
-    return service.get_users(skip, limit)

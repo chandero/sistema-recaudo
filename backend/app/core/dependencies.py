@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from typing import Optional
 from app.core.config import settings
 from app.core.database import get_session
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.core.exceptions import CredentialsException, ForbiddenException
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -44,8 +44,17 @@ def get_current_active_user(
 
 
 def get_current_platform_admin(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_active_user)
 ) -> User:
-    if not current_user.is_platform_admin:
+    if not current_user.is_platform_admin and current_user.role != UserRole.PLATFORM_ADMIN:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+    return current_user
+
+
+def get_current_user_admin(
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """Permite administrar usuarios a administradores de plataforma o tenant."""
+    if current_user.role not in (UserRole.PLATFORM_ADMIN, UserRole.TENANT_ADMIN):
+        raise HTTPException(status_code=403, detail="No tiene permisos para gestionar usuarios")
     return current_user

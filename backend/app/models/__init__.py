@@ -9,6 +9,8 @@ from app.models.import_template import ImportTemplate
 from app.models.task import Task, TaskStatus, TaskPriority
 from app.models.import_map import ImportMappingTemplate
 from app.models.import_batch import ImportBatch, ImportStatus
+from app.models.user_audit import UserAuditAction, UserAuditLog
+from app.models.user_invitation import UserInvitation
 
 __all__ = [
     "Tenant",
@@ -33,4 +35,7 @@ __all__ = [
     "ImportMappingTemplate",
     "ImportBatch",
     "ImportStatus",
+    "UserAuditAction",
+    "UserAuditLog",
+    "UserInvitation",
 ]

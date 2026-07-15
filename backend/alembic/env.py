@@ -1,4 +1,5 @@
 from logging.config import fileConfig
+import os
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -10,11 +11,17 @@ import sys
 sys.path.append('.')
 
 from sqlmodel import SQLModel
-from app.models import tenant, user, client, workflow, process, document, task, import_template, import_batch, import_map
+from app.models import tenant, user, client, workflow, process, document, task, import_template, import_batch, import_map, user_audit, user_invitation
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Permite que despliegues y pruebas seleccionen explícitamente su base de datos.
+# Sin esto Alembic ignoraba DATABASE_URL y siempre utilizaba el valor de alembic.ini.
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

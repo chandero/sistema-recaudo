@@ -48,19 +48,31 @@
         <span>{{ t('navigation.import') }}</span>
       </router-link>
     </li>
-    <li class="layout-menuitem">
+    <li v-if="isPlatformAdmin" class="layout-menuitem">
       <router-link to="/admin">
         <i class="pi pi-cog"></i>
         <span>{{ t('navigation.administration') }}</span>
+      </router-link>
+    </li>
+    <li v-if="isUserAdmin" class="layout-menuitem">
+      <router-link to="/admin/usuarios">
+        <i class="pi pi-user-edit"></i>
+        <span>Gestión de usuarios</span>
       </router-link>
     </li>
   </ul>
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { useI18n } from '@/composables/useI18n';
+import { useAuthStore } from '@/stores/auth';
+import { canManageUsers, isPlatformAdmin as hasPlatformRole } from '@/utils/userManagement';
 
 const { t } = useI18n();
+const authStore = useAuthStore();
+const isPlatformAdmin = computed(() => hasPlatformRole(authStore.currentUser?.role));
+const isUserAdmin = computed(() => canManageUsers(authStore.currentUser?.role));
 </script>
 
 <style scoped>

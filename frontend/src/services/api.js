@@ -111,6 +111,41 @@ export const tenantService = {
   }
 }
 
+// Servicio de administración de usuarios
+export const userService = {
+  getAll(params = {}) {
+    return apiClient.get('/users/', { params })
+  },
+
+  getById(id) {
+    return apiClient.get(`/users/${id}`)
+  },
+
+  create(data) {
+    return apiClient.post('/users/', data)
+  },
+
+  update(id, data) {
+    return apiClient.patch(`/users/${id}`, data)
+  },
+
+  changeStatus(id, isActive) {
+    return apiClient.patch(`/users/${id}/status`, { is_active: isActive })
+  },
+
+  resetPassword(id, password) {
+    return apiClient.post(`/users/${id}/reset-password`, { password })
+  },
+
+  invite(data) {
+    return apiClient.post('/users/invitations', data)
+  },
+
+  acceptInvitation(token, password) {
+    return apiClient.post('/users/invitations/accept', { token, password })
+  }
+}
+
 // Servicio de clientes
 export const clientService = {
   getAll(params = {}) {

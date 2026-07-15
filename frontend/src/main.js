@@ -30,6 +30,7 @@ import Column from 'primevue/column';
 import Toolbar from 'primevue/toolbar';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
+import Checkbox from 'primevue/checkbox';
 
 import App from './App.vue';
 import router from './router';
@@ -86,6 +87,7 @@ app.component('Column', Column);
 app.component('Toolbar', Toolbar);
 app.component('IconField', IconField);
 app.component('InputIcon', InputIcon);
+app.component('Checkbox', Checkbox);
 
 // Manejador global de errores
 app.config.errorHandler = (err, instance, info) => {

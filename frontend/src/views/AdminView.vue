@@ -1,6 +1,5 @@
 <template>
-  <Layout>
-    <div class="admin-panel">
+  <div class="admin-panel">
       <h2 class="section-title">Administración de Tenants</h2>
       
       <!-- Toolbar -->
@@ -400,18 +399,18 @@
           <Button label="Guardar" icon="pi pi-check" @click="saveTemplate" :loading="saving" />
         </template>
       </Dialog>
-    </div>
-  </Layout>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import Layout from '../components/Layout.vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../services/api'
 
 const authStore = useAuthStore()
-const current_user = computed(() => authStore.user)
+const router = useRouter()
+const current_user = computed(() => authStore.currentUser)
 
 // Estados
 const loading = ref(false)
@@ -550,15 +549,7 @@ const confirmDeleteTenant = (tenant) => {
 
 // Gestión de Usuarios
 const manageUsers = async (tenant) => {
-  selectedTenant.value = tenant
-  usersDialogVisible.value = true
-  // Cargar usuarios del tenant
-  try {
-    const response = await api.get(`/tenants/${tenant.id}/users`)
-    tenantUsers.value = response.data || []
-  } catch (error) {
-    tenantUsers.value = []
-  }
+  await router.push({ path: '/admin/usuarios', query: { tenant_id: tenant.id } })
 }
 
 const openNewUserDialog = () => {
