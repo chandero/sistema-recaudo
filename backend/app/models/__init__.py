@@ -1,6 +1,7 @@
 from app.models.tenant import Tenant
 from app.models.user import User, Permission, UserRole
-from app.models.client import Client, Obligation
+from app.models.client import Client
+from app.models.obligation import Obligation
 from app.models.workflow import WorkflowState, WorkflowTransition, WorkflowStateCode
 from app.models.process import CobroProcess, ProcessHistory, ProcessStatus
 from app.models.document import DocumentTemplate, GeneratedDocument, TemplateType

@@ -9,12 +9,12 @@
 
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="field">
-          <label for="username">Usuario</label>
+          <label for="email">Email</label>
           <InputText 
-            id="username" 
-            v-model="username" 
-            type="text" 
-            placeholder="Ingrese su usuario"
+            id="email" 
+            v-model="email" 
+            type="email" 
+            placeholder="Ingrese su email"
             class="w-full"
             :disabled="loading"
             @input="clearError"
@@ -44,7 +44,7 @@
           icon="pi pi-sign-in"
           class="w-full mt-4"
           :loading="loading"
-          :disabled="!username || !password"
+          :disabled="!email || !password"
         />
       </form>
 
@@ -60,12 +60,14 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { useAuth } from '@/composables/useAuth'
+import { useErrorHandler } from '@/composables/useErrorHandler'
 
 const router = useRouter()
-const authStore = useAuthStore()
+const { login } = useAuth()
+const { handleError } = useErrorHandler()
 
-const username = ref('')
+const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -74,7 +76,6 @@ const error = ref('')
 onMounted(() => {
   localStorage.removeItem('access_token')
   localStorage.removeItem('user_role')
-  authStore.clearToken()
 })
 
 const clearError = () => {
@@ -85,15 +86,19 @@ const handleLogin = async () => {
   loading.value = true
   error.value = ''
 
-  const result = await authStore.login(username.value, password.value)
-
-  if (result.success) {
-    router.push('/')
-  } else {
-    error.value = result.error
+  try {
+    const result = await login(email.value, password.value)
+    
+    if (result.success) {
+      router.push('/')
+    } else {
+      error.value = result.error
+    }
+  } catch (err) {
+    handleError(err, 'Error inesperado durante el inicio de sesión')
+  } finally {
+    loading.value = false
   }
-
-  loading.value = false
 }
 </script>
 

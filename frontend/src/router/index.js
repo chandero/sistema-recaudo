@@ -23,7 +23,15 @@ const requireAuth = async (to, from, next) => {
     next('/login');
   } else {
     if (!authStore.currentUser) {
-      await authStore.fetchCurrentUser();
+      try {
+        await authStore.getCurrentUser();
+      } catch (error) {
+        console.error('Error obteniendo usuario actual, redirigiendo a login:', error);
+        // Si hay error al obtener el usuario, limpiar sesión y redirigir al login
+        authStore.logout();
+        next('/login');
+        return;
+      }
     }
     next();
   }

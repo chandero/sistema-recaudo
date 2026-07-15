@@ -4,14 +4,47 @@ Procesa archivos, mapea columnas y crea clientes y obligaciones.
 """
 
 import io
+import json
+import os
+from datetime import datetime
 from typing import Dict, List, Optional
 from sqlmodel import Session, select
+from sqlalchemy import text
 from fastapi import UploadFile, HTTPException
 import pandas as pd
 import re
 
-from app.models.client import Client, Obligation
+from app.core.database import engine
+from app.models.client import Client
+from app.models.obligation import Obligation
+from app.models.import_batch import ImportBatch, ImportStatus
 from app.models.import_template import ImportTemplate
+
+
+TARGET_FIELD_ALIASES = {
+    "client.identification": "client.identification",
+    "identificacion": "client.identification",
+    "client.name": "client.name",
+    "nombre": "client.name",
+    "client.address": "client.address",
+    "direccion": "client.address",
+    "client.phone": "client.phone",
+    "telefono": "client.phone",
+    "client.email": "client.email",
+    "email": "client.email",
+    "obligation.number": "obligation.number",
+    "numero_obligacion": "obligation.number",
+    "obligation.amount": "obligation.amount",
+    "valor_total": "obligation.amount",
+    "obligation.issue_date": "obligation.issue_date",
+    "fecha_emision": "obligation.issue_date",
+    "obligation.due_date": "obligation.due_date",
+    "fecha_vencimiento": "obligation.due_date",
+    "obligation.concept": "obligation.concept",
+    "concepto": "obligation.concept",
+    "obligation.status": "obligation.status",
+    "estado": "obligation.status",
+}
 
 
 def detect_file_type(file: UploadFile) -> str:
@@ -130,6 +163,397 @@ def convert_monetary_value(value) -> float:
     except ValueError:
         # Si todo falla, devolver 0.0
         return 0.0
+
+
+def normalize_header_value(value) -> str:
+    if pd.isna(value):
+        return ""
+
+    return re.sub(r"\s+", " ", str(value).strip()).lower()
+
+
+def normalize_mapping_target(target_field: str) -> str:
+    return TARGET_FIELD_ALIASES.get(target_field, target_field)
+
+
+def get_column_for_target(column_mapping: Dict[str, str], target_field: str) -> Optional[str]:
+    for source_column, mapped_target in column_mapping.items():
+        if normalize_mapping_target(mapped_target) == target_field:
+            return source_column
+
+    return None
+
+
+def find_first_existing_column(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    normalized_columns = {normalize_header_value(column): column for column in df.columns}
+    for candidate in candidates:
+        column = normalized_columns.get(normalize_header_value(candidate))
+        if column:
+            return column
+
+    return None
+
+
+def read_batch_dataframe(file_path: str, column_mapping: Dict[str, str]) -> pd.DataFrame:
+    file_ext = os.path.splitext(file_path)[1].lower()
+    if file_ext == ".csv":
+        raw_df = pd.read_csv(file_path, header=None, dtype=object)
+    else:
+        raw_df = pd.read_excel(file_path, header=None, dtype=object)
+
+    if raw_df.empty:
+        return pd.DataFrame()
+
+    expected_headers = {normalize_header_value(column) for column in column_mapping.keys()}
+    header_row_index = 0
+
+    for index, row in raw_df.iterrows():
+        row_headers = {normalize_header_value(value) for value in row.tolist() if normalize_header_value(value)}
+        if expected_headers and expected_headers.issubset(row_headers):
+            header_row_index = index
+            break
+
+    headers = [str(value).strip() if pd.notna(value) else f"column_{idx + 1}" for idx, value in enumerate(raw_df.iloc[header_row_index].tolist())]
+    df = raw_df.iloc[header_row_index + 1:].copy()
+    df.columns = headers
+    df = df.dropna(how="all").reset_index(drop=True)
+    return df
+
+
+def parse_date_value(value, default: Optional[datetime] = None) -> datetime:
+    if pd.isna(value) or value == "" or value is None:
+        return default or datetime.utcnow()
+
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return default or datetime.utcnow()
+
+    return parsed.to_pydatetime()
+
+
+def update_batch_progress(
+    session: Session,
+    batch: ImportBatch,
+    status: ImportStatus,
+    processed_rows: Optional[int] = None,
+    success_rows: Optional[int] = None,
+    error_rows: Optional[int] = None,
+    errors_log: Optional[List[Dict]] = None,
+    completed_at: Optional[datetime] = None,
+) -> None:
+    batch.status = status
+    if processed_rows is not None:
+        batch.processed_rows = processed_rows
+    if success_rows is not None:
+        batch.success_rows = success_rows
+    if error_rows is not None:
+        batch.error_rows = error_rows
+    if errors_log is not None:
+        batch.errors_log = errors_log
+    if completed_at is not None:
+        batch.completed_at = completed_at
+
+    session.add(batch)
+    session.commit()
+
+
+def get_table_columns(session: Session, table_name: str) -> set[str]:
+    rows = session.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+    return {row[1] for row in rows}
+
+
+def process_import_batch(batch_id: int, tenant_id: int) -> None:
+    with Session(engine) as session:
+        batch = session.get(ImportBatch, batch_id)
+        if not batch or batch.tenant_id != tenant_id:
+            return
+
+        try:
+            column_mapping = batch.custom_mapping or {}
+            update_batch_progress(session, batch, ImportStatus.PROCESSING, processed_rows=0, success_rows=0, error_rows=0, errors_log=[])
+
+            if not column_mapping:
+                raise ValueError("El lote no tiene mapeo de columnas")
+
+            if not batch.file_path or not os.path.exists(batch.file_path):
+                raise ValueError("El archivo del lote no existe")
+
+            df = read_batch_dataframe(batch.file_path, column_mapping)
+            batch.total_rows = len(df)
+            session.add(batch)
+            session.commit()
+
+            required_targets = {
+                "client.identification": "identificación del cliente",
+                "client.name": "nombre del cliente",
+                "obligation.number": "número de obligación",
+                "obligation.amount": "valor de obligación",
+            }
+
+            resolved_columns = {
+                target: get_column_for_target(column_mapping, target)
+                for target in [
+                    "client.identification",
+                    "client.name",
+                    "client.address",
+                    "client.phone",
+                    "client.email",
+                    "obligation.number",
+                    "obligation.amount",
+                    "obligation.issue_date",
+                    "obligation.due_date",
+                    "obligation.concept",
+                ]
+            }
+
+            if not resolved_columns.get("obligation.amount"):
+                resolved_columns["obligation.amount"] = find_first_existing_column(
+                    df,
+                    ["VALOR ALPU", "VALOR_TOTAL", "valor_total", "valor", "monto", "saldo"]
+                )
+
+            missing_required = [label for target, label in required_targets.items() if not resolved_columns.get(target)]
+            if missing_required:
+                raise ValueError(f"Faltan columnas requeridas: {', '.join(missing_required)}")
+
+            now = datetime.utcnow()
+            success_rows = 0
+            errors = []
+            obligation_columns = get_table_columns(session, "obligations")
+            uses_legacy_obligations = "numero_obligacion" in obligation_columns
+
+            for row_index, row in df.iterrows():
+                try:
+                    identification = str(row[resolved_columns["client.identification"]]).strip()
+                    client_name = str(row[resolved_columns["client.name"]]).strip()
+                    obligation_number = str(row[resolved_columns["obligation.number"]]).strip()
+                    amount = convert_monetary_value(row[resolved_columns["obligation.amount"]])
+
+                    if not identification or identification.lower() == "nan":
+                        raise ValueError("La identificación está vacía")
+                    if not client_name or client_name.lower() == "nan":
+                        raise ValueError("El nombre del cliente está vacío")
+                    if not obligation_number or obligation_number.lower() == "nan":
+                        raise ValueError("El número de obligación está vacío")
+                    if amount <= 0:
+                        raise ValueError("El valor de la obligación debe ser mayor a cero")
+
+                    client_row = session.execute(
+                        text("""
+                            SELECT id FROM clients
+                            WHERE tenant_id = :tenant_id AND identification = :identification
+                            LIMIT 1
+                        """),
+                        {"tenant_id": tenant_id, "identification": identification}
+                    ).first()
+
+                    address_column = resolved_columns.get("client.address")
+                    phone_column = resolved_columns.get("client.phone")
+                    email_column = resolved_columns.get("client.email")
+                    address = str(row[address_column]).strip() if address_column and pd.notna(row[address_column]) else None
+                    phone = str(row[phone_column]).strip() if phone_column and pd.notna(row[phone_column]) else None
+                    email = str(row[email_column]).strip() if email_column and pd.notna(row[email_column]) else None
+
+                    if client_row:
+                        client_id = client_row[0]
+                        session.execute(
+                            text("""
+                                UPDATE clients
+                                SET name = :name,
+                                    address = COALESCE(:address, address),
+                                    phone = COALESCE(:phone, phone),
+                                    email = COALESCE(:email, email),
+                                    updated_at = :updated_at
+                                WHERE id = :client_id
+                            """),
+                            {
+                                "name": client_name,
+                                "address": address,
+                                "phone": phone,
+                                "email": email,
+                                "updated_at": now,
+                                "client_id": client_id,
+                            }
+                        )
+                    else:
+                        result = session.execute(
+                            text("""
+                                INSERT INTO clients (
+                                    tenant_id, identification, name, address, phone, email,
+                                    city, department, created_at, updated_at, is_active
+                                ) VALUES (
+                                    :tenant_id, :identification, :name, :address, :phone, :email,
+                                    NULL, NULL, :created_at, :updated_at, 1
+                                )
+                            """),
+                            {
+                                "tenant_id": tenant_id,
+                                "identification": identification,
+                                "name": client_name,
+                                "address": address,
+                                "phone": phone,
+                                "email": email,
+                                "created_at": now,
+                                "updated_at": now,
+                            }
+                        )
+                        client_id = result.lastrowid
+
+                    issue_column = resolved_columns.get("obligation.issue_date")
+                    due_column = resolved_columns.get("obligation.due_date")
+                    concept_column = resolved_columns.get("obligation.concept")
+                    issue_date = parse_date_value(row[issue_column] if issue_column else None, now)
+                    due_date = parse_date_value(row[due_column] if due_column else None, issue_date)
+                    concept = str(row[concept_column]).strip() if concept_column and pd.notna(row[concept_column]) else "Importación de cartera"
+                    description = f"{concept} - {obligation_number}"
+
+                    if uses_legacy_obligations:
+                        existing_obligation = session.execute(
+                            text("""
+                                SELECT id FROM obligations
+                                WHERE tenant_id = :tenant_id AND numero_obligacion = :numero_obligacion
+                                LIMIT 1
+                            """),
+                            {"tenant_id": tenant_id, "numero_obligacion": obligation_number}
+                        ).first()
+                    else:
+                        existing_obligation = session.execute(
+                            text("""
+                                SELECT id FROM obligations
+                                WHERE client_id = :client_id AND description = :description
+                                LIMIT 1
+                            """),
+                            {"client_id": client_id, "description": description}
+                        ).first()
+
+                    if existing_obligation:
+                        if uses_legacy_obligations:
+                            session.execute(
+                                text("""
+                                    UPDATE obligations
+                                    SET client_id = :client_id,
+                                        valor_total = :valor_total,
+                                        fecha_emision = :fecha_emision,
+                                        fecha_vencimiento = :fecha_vencimiento,
+                                        updated_at = :updated_at
+                                    WHERE id = :obligation_id
+                                """),
+                                {
+                                    "client_id": client_id,
+                                    "valor_total": amount,
+                                    "fecha_emision": issue_date,
+                                    "fecha_vencimiento": due_date,
+                                    "updated_at": now,
+                                    "obligation_id": existing_obligation[0],
+                                }
+                            )
+                        else:
+                            session.execute(
+                                text("""
+                                    UPDATE obligations
+                                    SET amount = :amount,
+                                        issue_date = :issue_date,
+                                        due_date = :due_date,
+                                        description = :description,
+                                        updated_at = :updated_at
+                                    WHERE id = :obligation_id
+                                """),
+                                {
+                                    "amount": amount,
+                                    "issue_date": issue_date,
+                                    "due_date": due_date,
+                                    "description": description,
+                                    "updated_at": now,
+                                    "obligation_id": existing_obligation[0],
+                                }
+                            )
+                    else:
+                        if uses_legacy_obligations:
+                            session.execute(
+                                text("""
+                                    INSERT INTO obligations (
+                                        tenant_id, client_id, process_id, numero_obligacion, vigencia,
+                                        capital, intereses, mora, valor_total, fecha_emision,
+                                        fecha_vencimiento, created_at, updated_at, is_active
+                                    ) VALUES (
+                                        :tenant_id, :client_id, NULL, :numero_obligacion, :vigencia,
+                                        :capital, 0, 0, :valor_total, :fecha_emision,
+                                        :fecha_vencimiento, :created_at, :updated_at, 1
+                                    )
+                                """),
+                                {
+                                    "tenant_id": tenant_id,
+                                    "client_id": client_id,
+                                    "numero_obligacion": obligation_number,
+                                    "vigencia": str(issue_date.year),
+                                    "capital": amount,
+                                    "valor_total": amount,
+                                    "fecha_emision": issue_date,
+                                    "fecha_vencimiento": due_date,
+                                    "created_at": now,
+                                    "updated_at": now,
+                                }
+                            )
+                        else:
+                            session.execute(
+                                text("""
+                                    INSERT INTO obligations (
+                                        amount, currency, due_date, issue_date, status, type,
+                                        description, client_id, process_id, created_at, updated_at
+                                    ) VALUES (
+                                        :amount, 'COP', :due_date, :issue_date, 'pending', 'invoice',
+                                        :description, :client_id, NULL, :created_at, :updated_at
+                                    )
+                                """),
+                                {
+                                    "amount": amount,
+                                    "due_date": due_date,
+                                    "issue_date": issue_date,
+                                    "description": description,
+                                    "client_id": client_id,
+                                    "created_at": now,
+                                    "updated_at": now,
+                                }
+                            )
+
+                    session.commit()
+                    success_rows += 1
+                except Exception as row_error:
+                    session.rollback()
+                    errors.append({"row": int(row_index) + 2, "error": str(row_error)})
+
+                update_batch_progress(
+                    session,
+                    batch,
+                    ImportStatus.PROCESSING,
+                    processed_rows=int(row_index) + 1,
+                    success_rows=success_rows,
+                    error_rows=len(errors),
+                    errors_log=errors[-50:],
+                )
+
+            final_status = ImportStatus.COMPLETED if not errors else ImportStatus.PARTIAL
+            update_batch_progress(
+                session,
+                batch,
+                final_status,
+                processed_rows=len(df),
+                success_rows=success_rows,
+                error_rows=len(errors),
+                errors_log=errors[-50:],
+                completed_at=datetime.utcnow(),
+            )
+        except Exception as error:
+            session.rollback()
+            batch = session.get(ImportBatch, batch_id)
+            if batch:
+                update_batch_progress(
+                    session,
+                    batch,
+                    ImportStatus.FAILED,
+                    errors_log=[{"row": None, "error": str(error)}],
+                    completed_at=datetime.utcnow(),
+                )
 
 
 async def process_import_file(
@@ -273,15 +697,32 @@ async def process_import_file(
                     'department': 'DEPARTAMENTO'
                 }
                 
+                # Diccionario para campos adicionales
+                additional_attributes = {}
+                
                 for field, map_key in optional_mappings.items():
                     if map_key in column_mapping and column_mapping[map_key] in df.columns:
                         value = row[column_mapping[map_key]]
                         if pd.notna(value):
                             client_data[field] = str(value).strip()
                 
+                # Manejar campos adicionales que no están en el modelo base
+                for mapped_field, original_column in column_mapping.items():
+                    # Si el campo mapeado no es uno de los campos estándar, agregarlo como campo adicional
+                    standard_fields = {'IDENTIFICACION', 'NOMBRE', 'DIRECCION', 'TELEFONO', 'EMAIL', 'CIUDAD', 'DEPARTAMENTO'}
+                    if original_column in df.columns and mapped_field not in standard_fields:
+                        value = row[original_column]
+                        if pd.notna(value):
+                            # Normalizar el nombre del campo para usar como clave en JSON
+                            normalized_key = re.sub(r'[^\w\s]', '_', mapped_field.upper().strip())
+                            additional_attributes[normalized_key] = str(value).strip()
+                
                 # Si no se especificó departamento, usar un valor por defecto
                 if 'department' not in client_data:
                     client_data['department'] = 'Santander'  # Por defecto para Girón
+                
+                # Agregar campos adicionales al cliente
+                client_data['additional_attributes'] = additional_attributes
                 
                 client = Client(**client_data)
                 session.add(client)
@@ -316,6 +757,9 @@ async def process_import_file(
                     'tenant_id': tenant_id
                 }
                 
+                # Diccionario para campos adicionales de obligación
+                obligation_additional_attributes = {}
+                
                 # Campos opcionales de obligación
                 if 'CAPITAL' in column_mapping and column_mapping['CAPITAL'] in df.columns:
                     val = row[column_mapping['CAPITAL']]
@@ -345,6 +789,20 @@ async def process_import_file(
                             obligation_data['fecha_vencimiento'] = pd.to_datetime(val)
                         except:
                             pass
+                
+                # Manejar campos adicionales que no están en el modelo base
+                for mapped_field, original_column in column_mapping.items():
+                    # Si el campo mapeado no es uno de los campos estándar, agregarlo como campo adicional
+                    standard_fields = {'NUMERO_OBLIGACION', 'VIGENCIA', 'VALOR_TOTAL', 'CAPITAL', 'INTERESES', 'MORA', 'FECHA_EMISION', 'FECHA_VENCIMIENTO'}
+                    if original_column in df.columns and mapped_field not in standard_fields:
+                        value = row[original_column]
+                        if pd.notna(value):
+                            # Normalizar el nombre del campo para usar como clave en JSON
+                            normalized_key = re.sub(r'[^\w\s]', '_', mapped_field.upper().strip())
+                            obligation_additional_attributes[normalized_key] = str(value).strip()
+                
+                # Agregar campos adicionales a la obligación
+                obligation_data['additional_attributes'] = obligation_additional_attributes
                 
                 obligation = Obligation(**obligation_data)
                 session.add(obligation)

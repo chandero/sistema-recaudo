@@ -45,10 +45,10 @@ apiClient.interceptors.response.use(
 
 // Servicio de autenticación
 export const authService = {
-  async login(username, password) {
+  async login(email, password) {
     // El backend ahora espera JSON
     const response = await apiClient.post('/auth/login', {
-      username,
+      email,
       password
     })
     if (response.data.access_token) {
@@ -126,7 +126,7 @@ export const clientService = {
   },
 
   update(id, data) {
-    return apiClient.patch(`/clients/${id}`, data)
+    return apiClient.put(`/clients/${id}`, data)
   },
 
   delete(id) {
@@ -160,12 +160,20 @@ export const obligationService = {
     return apiClient.get(`/obligations/${id}`)
   },
 
+  getCount() {
+    return apiClient.get('/obligations/stats/count')
+  },
+
   create(data) {
     return apiClient.post('/obligations/', data)
   },
 
   update(id, data) {
-    return apiClient.patch(`/obligations/${id}`, data)
+    return apiClient.put(`/obligations/${id}`, data)
+  },
+
+  delete(id) {
+    return apiClient.delete(`/obligations/${id}`)
   }
 }
 

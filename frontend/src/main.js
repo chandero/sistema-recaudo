@@ -11,12 +11,16 @@ import StyleClass from 'primevue/styleclass';
 import InputText from 'primevue/inputtext';
 import Password from 'primevue/password';
 import Button from 'primevue/button';
+import Card from 'primevue/card';
 import Message from 'primevue/message';
 import FileUpload from 'primevue/fileupload';
 import Dropdown from 'primevue/dropdown';
+import InputNumber from 'primevue/inputnumber';
+import Calendar from 'primevue/calendar';
 import Textarea from 'primevue/textarea';
 import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
+import Toast from 'primevue/toast';
 import MultiSelect from 'primevue/multiselect';
 import SplitButton from 'primevue/splitbutton';
 import TabView from 'primevue/tabview';
@@ -30,6 +34,7 @@ import InputIcon from 'primevue/inputicon';
 import App from './App.vue';
 import router from './router';
 import { useAuthStore } from './stores/auth';
+import { useI18n } from './composables/useI18n'; // Importar el composable de internacionalización
 
 import 'primeicons/primeicons.css';
 import 'primeflex/primeflex.css';
@@ -42,6 +47,12 @@ const app = createApp(App);
 
 app.use(createPinia());
 app.use(router);
+
+// Configurar i18n manualmente en lugar de usar un plugin externo
+const { currentLocale, t } = useI18n();
+// Añadir t como propiedad global para que esté disponible en todos los componentes
+app.config.globalProperties.$t = t;
+
 app.use(PrimeVue, {
     ripple: true
 });
@@ -56,12 +67,16 @@ app.directive('styleclass', StyleClass);
 app.component('InputText', InputText);
 app.component('Password', Password);
 app.component('Button', Button);
+app.component('Card', Card);
 app.component('Message', Message);
 app.component('FileUpload', FileUpload);
 app.component('Dropdown', Dropdown);
+app.component('InputNumber', InputNumber);
+app.component('Calendar', Calendar);
 app.component('Textarea', Textarea);
 app.component('Dialog', Dialog);
 app.component('Tag', Tag);
+app.component('Toast', Toast);
 app.component('MultiSelect', MultiSelect);
 app.component('SplitButton', SplitButton);
 app.component('TabView', TabView);

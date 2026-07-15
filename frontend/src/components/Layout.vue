@@ -7,62 +7,7 @@
         <span class="logo-text">Sistema de Recaudo</span>
       </div>
       <div class="layout-sidebar-content">
-        <ul class="layout-menu">
-          <li class="layout-menuitem">
-            <router-link to="/dashboard">
-              <i class="pi pi-home"></i>
-              <span>Dashboard</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/clientes">
-              <i class="pi pi-users"></i>
-              <span>Clientes</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/obligaciones">
-              <i class="pi pi-file-invoice-dollar"></i>
-              <span>Obligaciones</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/procesos">
-              <i class="pi pi-sitemap"></i>
-              <span>Procesos</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/workflow">
-              <i class="pi pi-sync"></i>
-              <span>Workflow</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/resoluciones">
-              <i class="pi pi-file-signature"></i>
-              <span>Resoluciones</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/documentos">
-              <i class="pi pi-file-pdf"></i>
-              <span>Documentos</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/importar">
-              <i class="pi pi-upload"></i>
-              <span>Importar</span>
-            </router-link>
-          </li>
-          <li class="layout-menuitem">
-            <router-link to="/admin">
-              <i class="pi pi-cog"></i>
-              <span>Administración</span>
-            </router-link>
-          </li>
-        </ul>
+        <AppMenu :mobileMenuActive="mobileMenuActive" />
       </div>
     </div>
 
@@ -95,6 +40,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import Breadcrumb from 'primevue/breadcrumb';
 import { useAuthStore } from '@/stores/auth';
+import AppMenu from './AppMenu.vue'; // Importar el componente AppMenu
 
 // Estados
 const mobileMenuActive = ref(false);
@@ -283,12 +229,18 @@ const currentPageTitle = ref('Dashboard'); // Valor por defecto
 
 .layout-content {
   flex: 1;
+  min-width: 0;
   margin-top: 60px;
-  margin-left: 250px;
   padding: 20px;
   background-color: #f5f5f7;
-  overflow-y: auto;
+  overflow: auto;
   transition: margin-left 0.3s ease;
+}
+
+.layout-content > :deep(*) {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
 }
 
 .layout-mask {

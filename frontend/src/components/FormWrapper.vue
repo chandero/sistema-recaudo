@@ -1,5 +1,5 @@
 <template>
-  <form @submit.prevent="onSubmit" class="form-wrapper">
+  <component :is="asForm ? 'form' : 'div'" @submit.prevent="onSubmit" class="form-wrapper">
     <div class="form-header" v-if="title || $slots.header">
       <h3 v-if="title">{{ title }}</h3>
       <slot name="header" />
@@ -30,7 +30,7 @@
         </div>
       </slot>
     </div>
-  </form>
+  </component>
 </template>
 
 <script setup>
@@ -40,6 +40,10 @@ const props = defineProps({
   title: {
     type: String,
     default: null
+  },
+  asForm: {
+    type: Boolean,
+    default: true
   },
   showDefaultButtons: {
     type: Boolean,

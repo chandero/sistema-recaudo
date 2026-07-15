@@ -531,6 +531,84 @@ de <template>
       </template>
     </Dialog>
 
+    <!-- Dialog for uploading templates -->
+    <Dialog 
+      v-model:visible="templateUploadDialog" 
+      :style="{ width: '500px' }" 
+      header="Cargar Nueva Plantilla" 
+      :modal="true" 
+      class="p-fluid"
+    >
+      <div class="field">
+        <label for="templateFile">Seleccionar Archivo de Plantilla</label>
+        <FileUpload 
+          id="templateFile" 
+          name="templateFile" 
+          :multiple="false" 
+          accept=".docx,.pdf,.html,.txt" 
+          customUpload 
+          @uploader="customTemplateUploader"
+          :maxFileSize="10000000"
+        />
+      </div>
+      <div class="field">
+        <label for="templateName">Nombre de la Plantilla</label>
+        <InputText 
+          id="templateName" 
+          v-model.trim="newTemplate.name" 
+          required="true" 
+          autofocus 
+          :class="{ 'p-invalid': submitted && !newTemplate.name }" 
+        />
+        <small class="p-error" v-if="submitted && !newTemplate.name">El nombre es obligatorio.</small>
+      </div>
+      <div class="field">
+        <label for="templateCode">Código de la Plantilla</label>
+        <InputText 
+          id="templateCode" 
+          v-model.trim="newTemplate.code" 
+          required="true" 
+          :class="{ 'p-invalid': submitted && !newTemplate.code }" 
+        />
+        <small class="p-error" v-if="submitted && !newTemplate.code">El código es obligatorio.</small>
+      </div>
+      <div class="field">
+        <label for="templateType">Tipo de Plantilla</label>
+        <Dropdown 
+          id="templateType" 
+          v-model="newTemplate.type" 
+          :options="templateTypes" 
+          optionLabel="label" 
+          optionValue="value"
+          placeholder="Seleccione tipo"
+        />
+      </div>
+      <div class="field">
+        <label for="templateDescription">Descripción</label>
+        <Textarea 
+          id="templateDescription" 
+          v-model="newTemplate.description" 
+          :autoResize="true" 
+          rows="3" 
+          cols="30" 
+        />
+      </div>
+      <template #footer>
+        <Button 
+          label="Cancelar" 
+          icon="pi pi-times" 
+          text 
+          @click="hideTemplateUploadDialog"
+        />
+        <Button 
+          label="Cargar Plantilla" 
+          icon="pi pi-upload" 
+          @click="uploadTemplate"
+          :disabled="!newTemplate.file || !newTemplate.name || !newTemplate.code"
+        />
+      </template>
+    </Dialog>
+
     <!-- Document Generator Dialog -->
     <DocumentGenerator 
       v-model:visible="showDocumentGenerator" 
@@ -624,20 +702,27 @@ const schemaFromAnalysis = computed(() => {
   return schema;
 });
 
+const openDialogFromMenu = (openDialog) => {
+  // Let PrimeVue close the overlay menu before opening another focus trap.
+  window.setTimeout(() => {
+    openDialog();
+  }, 0);
+};
+
 // Define upload menu items for SplitButton
 const uploadMenuItems = ref([
   {
     label: 'Subir Documento Existente',
     icon: 'pi pi-file',
     command: () => {
-      openUploadDialog();
+      openDialogFromMenu(openUploadDialog);
     }
   },
   {
     label: 'Cargar Plantilla',
     icon: 'pi pi-file-import',
     command: () => {
-      openTemplateUploadDialog();
+      openDialogFromMenu(openTemplateUploadDialog);
     }
   }
 ]);
@@ -966,11 +1051,13 @@ const customUploader = (event) => {
   newDocument.value.file = event.files[0];
 };
 
-const onTemplateFileSelect = (event) => {
-  const file = event.target.files[0];
+const customTemplateUploader = (event) => {
+  // Handle the file upload for templates
+  const file = event.files[0];
   if (file) {
     selectedTemplateFile.value = file;
     selectedTemplateName.value = file.name;
+    newTemplate.value.file = file;
     
     // Actualizar el valor del template para que coincida con el nombre del archivo si no hay un nombre establecido
     if (!newTemplate.value.name || newTemplate.value.name === '') {

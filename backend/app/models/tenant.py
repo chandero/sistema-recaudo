@@ -4,7 +4,7 @@ from datetime import datetime
 
 if TYPE_CHECKING:
     from app.models.user import User
-    from app.models.client import Client, Obligation
+    from app.models.client import Client
     from app.models.process import CobroProcess
     from app.models.workflow import WorkflowState
     from app.models.document import DocumentTemplate
@@ -28,7 +28,6 @@ class Tenant(TenantBase, table=True):
     
     users: List["User"] = Relationship(back_populates="tenant")
     clients: List["Client"] = Relationship(back_populates="tenant")
-    obligations: List["Obligation"] = Relationship(back_populates="tenant")
     processes: List["CobroProcess"] = Relationship(back_populates="tenant")
     workflow_states: List["WorkflowState"] = Relationship(back_populates="tenant")
     document_templates: List["DocumentTemplate"] = Relationship(back_populates="tenant")

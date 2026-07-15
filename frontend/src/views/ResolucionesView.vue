@@ -6,7 +6,7 @@
           <i class="pi pi-file-signature text-3xl text-purple-600"></i>
           <div>
             <h2 class="text-2xl font-bold text-gray-800 m-0">Asignación de Resoluciones y Radicados</h2>
-            <p class="text-gray-500 m-0">Generación de documentos para correspondencia oficial</p>
+            <p class="text-gray-500 m-0">Asigna consecutivos oficiales a obligaciones según su estado actual</p>
           </div>
         </div>
       </div>
@@ -20,7 +20,7 @@
                 <i class="pi pi-file"></i>
               </div>
               <div class="flex-1">
-                <span class="text-sm text-gray-500 block">Documentos Pendientes</span>
+                <span class="text-sm text-gray-500 block">Obligaciones Pendientes</span>
                 <span class="text-2xl font-bold text-primary">{{ documentosPendientes }}</span>
               </div>
             </div>
@@ -70,78 +70,172 @@
         </Card>
       </div>
 
-      <!-- Configuración de Consecutivos -->
-      <Card class="mb-4 shadow-1">
-        <template #header>
-          <div class="flex justify-content-between align-items-center">
-            <h3 class="m-0 flex align-items-center gap-2">
-              <i class="pi pi-cog"></i>Configuración de Consecutivos
-            </h3>
-            <Button 
-              label="Editar Configuración" 
-              icon="pi pi-pencil" 
-              @click="openConfigDialog"
-              outlined
-              size="small"
-            />
-          </div>
-        </template>
-        <template #content>
-          <div class="grid gap-3">
-            <div class="col-12 md:col-6 lg:col-3">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-tag mr-2"></i>Prefijo Resolución
-                </label>
-                <InputText v-model="config.prefijo_resolucion" class="w-full" disabled />
-              </div>
-            </div>
-            <div class="col-12 md:col-6 lg:col-3">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-hashtag mr-2"></i>Número Inicial
-                </label>
-                <InputText v-model="config.numero_inicial" class="w-full" disabled />
-              </div>
-            </div>
-            <div class="col-12 md:col-6 lg:col-3">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-hashtag mr-2"></i>Número Actual
-                </label>
-                <InputText v-model="config.numero_actual" class="w-full" disabled />
-              </div>
-            </div>
-            <div class="col-12 md:col-6 lg:col-3">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-tag mr-2"></i>Prefijo Radicado
-                </label>
-                <InputText v-model="config.prefijo_radicado" class="w-full" disabled />
-              </div>
-            </div>
-          </div>
-        </template>
-      </Card>
-
-      <!-- Generación Masiva de Documentos -->
+      <!-- Asignación Masiva de Resoluciones -->
       <Card class="shadow-1">
         <template #header>
           <div class="flex justify-content-between align-items-center">
             <h3 class="m-0 flex align-items-center gap-2">
-              <i class="pi pi-file-export"></i>Generación Masiva de Documentos
+              <i class="pi pi-file-export"></i>Asignación Masiva de Resoluciones
             </h3>
-            <Button 
-              label="Asignar Resoluciones" 
-              icon="pi pi-file-export" 
-              @click="openAsignacionDialog"
-              severity="success"
-              :disabled="procesosSeleccionados.length === 0"
-              raised
-            />
+            <div class="flex gap-2">
+              <Button
+                label="Generar correspondencia ZIP"
+                icon="pi pi-envelope"
+                @click="generarCorrespondencia"
+                severity="info"
+                :loading="generandoCorrespondencia"
+                :disabled="procesosSeleccionados.length === 0"
+                outlined
+              />
+              <Button 
+                label="Asignar Resoluciones" 
+                icon="pi pi-file-export" 
+                @click="asignarResoluciones"
+                severity="success"
+                raised
+              />
+            </div>
           </div>
         </template>
         <template #content>
+          <!-- Datos obligatorios de la resolución -->
+          <div class="resolution-data mb-4">
+            <h4 class="mt-0 mb-3 flex align-items-center gap-2">
+              <i class="pi pi-file-edit text-purple-600"></i>
+              Datos de la resolución
+            </h4>
+            <div class="grid gap-3">
+              <div class="col-12 md:col-3">
+                <div class="field">
+                  <label class="font-semibold block mb-2" for="main-resolution-number">
+                    Número inicial de resolución <span class="text-red-500">*</span>
+                  </label>
+                  <InputNumber
+                    id="main-resolution-number"
+                    v-model="resolutionNumber"
+                    :useGrouping="false"
+                    :min="1"
+                    class="w-full"
+                    placeholder="Ingrese el número inicial"
+                  />
+                </div>
+              </div>
+              <div class="col-12 md:col-3">
+                <div class="field">
+                  <label class="font-semibold block mb-2" for="main-resolution-year">
+                    Año de resolución <span class="text-red-500">*</span>
+                  </label>
+                  <InputNumber
+                    id="main-resolution-year"
+                    v-model="resolutionYear"
+                    :useGrouping="false"
+                    :min="1900"
+                    :max="9999"
+                    class="w-full"
+                    placeholder="Ej: 2026"
+                  />
+                </div>
+              </div>
+              <div class="col-12 md:col-3">
+                <div class="field">
+                  <label class="font-semibold block mb-2" for="main-resolution-date">
+                    Fecha de resolución <span class="text-red-500">*</span>
+                  </label>
+                  <InputText
+                    id="main-resolution-date"
+                    v-model="resolutionDate"
+                    type="date"
+                    class="w-full"
+                  />
+                </div>
+              </div>
+              <div class="col-12 md:col-3">
+                <div class="field">
+                  <label class="font-semibold block mb-2" for="main-radicado-number">
+                    Número inicial de radicado <span class="text-red-500">*</span>
+                  </label>
+                  <InputNumber
+                    id="main-radicado-number"
+                    v-model="numeroRadicadoInicial"
+                    :useGrouping="false"
+                    :min="1"
+                    class="w-full"
+                    placeholder="Ingrese el número"
+                  />
+                </div>
+              </div>
+            </div>
+            <small class="text-gray-500">
+              Las resoluciones y los radicados se incrementarán consecutivamente desde los números iniciales ingresados.
+            </small>
+            <div class="flex align-items-center gap-2 mt-3">
+              <Checkbox v-model="overwriteAssignments" inputId="overwrite-assignments" binary />
+              <label for="overwrite-assignments" class="font-semibold cursor-pointer">
+                Sobrescribir resolución, año, fecha y radicado existentes
+              </label>
+              <Tag
+                :value="overwriteAssignments ? 'Activo' : 'Inactivo'"
+                :severity="overwriteAssignments ? 'warning' : 'secondary'"
+              />
+            </div>
+            <Message v-if="overwriteAssignments" severity="warn" :closable="false" class="mt-3 mb-0">
+              Los datos actuales de las obligaciones seleccionadas serán reemplazados.
+            </Message>
+          </div>
+
+          <div class="resolution-data mb-4">
+            <h4 class="mt-0 mb-3 flex align-items-center gap-2">
+              <i class="pi pi-print text-blue-600"></i>
+              Impresión de correspondencia por rango
+            </h4>
+            <div class="grid gap-3 align-items-end">
+              <div class="col-12 md:col-3">
+                <label class="font-semibold block mb-2" for="print-resolution-from">Resolución desde</label>
+                <InputNumber
+                  id="print-resolution-from"
+                  v-model="printRange.from"
+                  :useGrouping="false"
+                  :min="1"
+                  class="w-full"
+                />
+              </div>
+              <div class="col-12 md:col-3">
+                <label class="font-semibold block mb-2" for="print-resolution-to">Resolución hasta</label>
+                <InputNumber
+                  id="print-resolution-to"
+                  v-model="printRange.to"
+                  :useGrouping="false"
+                  :min="1"
+                  class="w-full"
+                />
+              </div>
+              <div class="col-12 md:col-6 flex gap-2">
+                <Button
+                  label="Descargar DOCX"
+                  icon="pi pi-file-word"
+                  severity="secondary"
+                  class="w-full"
+                  @click="generarImpresionPorRango('docx')"
+                  :loading="generandoImpresion"
+                  :disabled="!printRange.from || !printRange.to"
+                  outlined
+                />
+                <Button
+                  label="Abrir PDF para imprimir"
+                  icon="pi pi-print"
+                  severity="info"
+                  class="w-full"
+                  @click="generarImpresionPorRango('pdf')"
+                  :loading="generandoImpresion"
+                  :disabled="!printRange.from || !printRange.to"
+                />
+              </div>
+            </div>
+            <small class="text-gray-500">
+              El rango genera un solo archivo, con las correspondencias ordenadas por resolución. El PDF se abre en un visor con opción de imprimir o descargar.
+            </small>
+          </div>
+
           <!-- Filtros -->
           <div class="flex flex-wrap gap-3 mb-4">
             <Dropdown 
@@ -155,13 +249,37 @@
             />
             <Button label="Aplicar" icon="pi pi-filter-fill" severity="primary" @click="aplicarFiltros" />
             <Button label="Limpiar" icon="pi pi-trash" severity="secondary" outlined @click="limpiarFiltros" />
+            <Button
+              label="Seleccionar todas"
+              icon="pi pi-check-square"
+              severity="success"
+              outlined
+              @click="seleccionarTodas"
+              :disabled="procesosElegibles.length === 0"
+            />
+            <Button
+              label="Deseleccionar todas"
+              icon="pi pi-times"
+              severity="secondary"
+              text
+              @click="deseleccionarTodas"
+              :disabled="procesosSeleccionados.length === 0"
+            />
+            <Button
+              label="Seleccionar con resolución"
+              icon="pi pi-envelope"
+              severity="info"
+              outlined
+              @click="seleccionarConResolucion"
+              :disabled="procesosConResolucion.length === 0"
+            />
           </div>
 
-          <!-- Tabla de Procesos -->
+          <!-- Tabla de Obligaciones -->
           <DataTable 
             :value="procesosFiltrados" 
             :loading="loading"
-            selectionMode="checkbox"
+            dataKey="obligation_id"
             v-model:selection="procesosSeleccionados"
             :paginator="true" 
             :rows="15"
@@ -193,6 +311,26 @@
                 <Tag :value="slotProps.data.current_state?.name || slotProps.data.estado" severity="info" />
               </template>
             </Column>
+            <Column field="resolution_number" header="Resolución" class="col-reference">
+              <template #body="slotProps">
+                {{ slotProps.data.resolution_number || 'Sin asignar' }}
+              </template>
+            </Column>
+            <Column field="resolution_year" header="Año resolución" class="col-reference">
+              <template #body="slotProps">
+                {{ slotProps.data.resolution_year || 'Sin asignar' }}
+              </template>
+            </Column>
+            <Column field="resolution_date" header="Fecha resolución" class="col-fecha">
+              <template #body="slotProps">
+                {{ formatDate(slotProps.data.resolution_date) }}
+              </template>
+            </Column>
+            <Column field="radicado_number" header="Radicado" class="col-reference">
+              <template #body="slotProps">
+                {{ slotProps.data.radicado_number || 'Sin asignar' }}
+              </template>
+            </Column>
             <Column field="created_at" header="Fecha" sortable class="col-fecha">
               <template #body="slotProps">
                 {{ formatDate(slotProps.data.created_at) }}
@@ -219,7 +357,7 @@
                     <div class="flex align-items-center gap-2">
                       <i class="pi pi-info-circle text-blue-600"></i>
                       <span class="font-semibold text-blue-800">
-                        {{ procesosSeleccionados.length }} proceso(s) seleccionado(s)
+                        {{ procesosSeleccionados.length }} obligación(es) seleccionada(s)
                       </span>
                     </div>
                     <div class="flex gap-2">
@@ -247,8 +385,7 @@
                           <i class="pi pi-file mr-1"></i>Rango de Resoluciones
                         </label>
                         <p class="m-0 font-medium">
-                          {{ config.prefijo_resolucion }}-{{ numeroResolucionInicial }} a 
-                          {{ config.prefijo_resolucion }}-{{ numeroResolucionFinal }}
+                          {{ resolutionNumber }} a {{ resolutionNumberFinal }}
                         </p>
                       </div>
                     </div>
@@ -271,71 +408,6 @@
         </template>
       </Card>
 
-      <!-- Dialog: Configuración -->
-      <Dialog 
-        v-model:visible="configDialogVisible" 
-        modal 
-        header="Configuración de Consecutivos"
-        :style="{ width: '600px' }"
-      >
-        <div class="flex flex-column gap-4">
-          <Message severity="info" class="mb-2">
-            <i class="pi pi-info-circle mr-2"></i>
-            Configure los prefijos y números iniciales para resoluciones y radicados
-          </Message>
-
-          <div class="grid gap-3">
-            <div class="col-12">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-tag mr-2"></i>Prefijo de Resolución
-                </label>
-                <InputText v-model="config.prefijo_resolucion" class="w-full" placeholder="Ej: RES-2024" />
-              </div>
-            </div>
-            <div class="col-12 md:col-6">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-hashtag mr-2"></i>Número Inicial de Resolución
-                </label>
-                <InputNumber v-model="config.numero_inicial" class="w-full" />
-              </div>
-            </div>
-            <div class="col-12 md:col-6">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-tag mr-2"></i>Prefijo de Radicado
-                </label>
-                <InputText v-model="config.prefijo_radicado" class="w-full" placeholder="Ej: RAD-2024" />
-              </div>
-            </div>
-            <div class="col-12 md:col-6">
-              <div class="field">
-                <label class="font-semibold block mb-2">
-                  <i class="pi pi-hashtag mr-2"></i>Número Inicial de Radicado
-                </label>
-                <InputNumber v-model="config.radicado_inicial" class="w-full" />
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <template #footer>
-          <Button 
-            label="Cancelar" 
-            icon="pi pi-times" 
-            @click="configDialogVisible = false; restoreConfig()"
-            class="p-button-text"
-          />
-          <Button 
-            label="Guardar Configuración" 
-            icon="pi pi-check" 
-            @click="guardarConfiguracion" 
-            severity="success"
-          />
-        </template>
-      </Dialog>
-
       <!-- Dialog: Confirmación Asignación -->
       <Dialog 
         v-model:visible="asignacionDialogVisible" 
@@ -347,8 +419,11 @@
           <Message severity="warn" class="mb-2">
             <i class="pi pi-exclamation-triangle mr-2"></i>
             Está a punto de asignar números de resolución y radicado a 
-            <strong>{{ procesosSeleccionados.length }} procesos</strong>.
+            <strong>{{ procesosSeleccionados.length }} obligaciones</strong>.
             <br />Esta acción <strong>no se puede deshacer</strong>.
+            <template v-if="overwriteAssignments">
+              <br /><strong>Modo sobrescritura activo:</strong> se reemplazarán los datos existentes.
+            </template>
           </Message>
           
           <Card>
@@ -360,13 +435,25 @@
                 <div class="col-12">
                   <div class="flex align-items-center gap-2 mb-2">
                     <i class="pi pi-list-check text-green-600"></i>
-                    <span><strong>Procesos seleccionados:</strong> {{ procesosSeleccionados.length }}</span>
+                    <span><strong>Obligaciones seleccionadas:</strong> {{ procesosSeleccionados.length }}</span>
+                  </div>
+                </div>
+                <div class="col-12 md:col-6">
+                  <div class="flex align-items-center gap-2 mb-2">
+                    <i class="pi pi-calendar text-purple-600"></i>
+                    <span><strong>Año de resolución:</strong> {{ resolutionYear }}</span>
+                  </div>
+                </div>
+                <div class="col-12 md:col-6">
+                  <div class="flex align-items-center gap-2 mb-2">
+                    <i class="pi pi-calendar text-purple-600"></i>
+                    <span><strong>Fecha de resolución:</strong> {{ formatDate(resolutionDate) }}</span>
                   </div>
                 </div>
                 <div class="col-12">
                   <div class="flex align-items-center gap-2 mb-2">
                     <i class="pi pi-file text-purple-600"></i>
-                    <span><strong>Resoluciones:</strong> {{ config.prefijo_resolucion }}-{{ numeroResolucionInicial }} al {{ config.prefijo_resolucion }}-{{ numeroResolucionFinal }}</span>
+                    <span><strong>Resoluciones:</strong> {{ resolutionNumber }} al {{ resolutionNumberFinal }}</span>
                   </div>
                 </div>
                 <div class="col-12">
@@ -378,7 +465,7 @@
               </div>
             </template>
           </Card>
-          
+
           <div class="field">
             <label class="font-semibold block mb-2">
               <i class="pi pi-comment mr-2"></i>Observaciones
@@ -401,11 +488,12 @@
             class="p-button-text"
           />
           <Button 
-            label="Confirmar y Generar Documentos" 
+            label="Confirmar asignación" 
             icon="pi pi-check-circle" 
             @click="confirmarAsignacion" 
             severity="success"
             :loading="asignando"
+            :disabled="!resolutionNumber || !resolutionYear || !resolutionDate || !numeroRadicadoInicial"
             raised
           />
         </template>
@@ -418,6 +506,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
+import Checkbox from 'primevue/checkbox';
 import api from '../services/api';
 
 const toast = useToast();
@@ -425,11 +514,14 @@ const toast = useToast();
 // Estados
 const loading = ref(false);
 const asignando = ref(false);
+const generandoCorrespondencia = ref(false);
+const generandoImpresion = ref(false);
 const procesos = ref([]);
 const procesosFiltrados = ref([]);
 const procesosSeleccionados = ref([]);
 const estadosDisponibles = ref([]);
 const filtroEstado = ref(null);
+const printRange = ref({ from: null, to: null });
 
 // Configuración
 const config = ref({
@@ -439,21 +531,27 @@ const config = ref({
   prefijo_radicado: 'RAD-2024',
   radicado_inicial: 5000
 });
-const originalConfig = ref({});
 
 // Cálculos
 const consecutivosCalculados = ref(false);
-const numeroResolucionInicial = ref(0);
-const numeroResolucionFinal = ref(0);
+const resolutionNumber = ref(0);
+const resolutionNumberFinal = ref(0);
 const numeroRadicadoInicial = ref(0);
 const numeroRadicadoFinal = ref(0);
 
 // Diálogos
-const configDialogVisible = ref(false);
 const asignacionDialogVisible = ref(false);
 
 // Observaciones
 const observaciones = ref('');
+const overwriteAssignments = ref(false);
+const today = new Date();
+const resolutionYear = ref(today.getFullYear());
+const resolutionDate = ref([
+  today.getFullYear(),
+  String(today.getMonth() + 1).padStart(2, '0'),
+  String(today.getDate()).padStart(2, '0')
+].join('-'));
 
 // Computed
 const documentosPendientes = computed(() => 
@@ -464,21 +562,48 @@ const resolucionesAsignadas = computed(() =>
   procesos.value.filter(p => p.current_state?.code === 'RESOLUCION_RADICADOS_ASIGNADOS').length
 );
 
-const radicadosGenerados = computed(() => procesos.value.length);
+const radicadosGenerados = computed(() =>
+  procesos.value.filter(p => Boolean(p.radicado_number)).length
+);
 
 const enCorrespondencia = computed(() => 
   procesos.value.filter(p => p.current_state?.code === 'RESOLUCION_RADICADOS_ASIGNADOS' && p.documento_enviado).length
+);
+
+const puedeAsignarResoluciones = computed(() =>
+  procesosSeleccionados.value.length > 0 &&
+  Boolean(resolutionNumber.value) &&
+  Boolean(numeroRadicadoInicial.value) &&
+  Boolean(resolutionYear.value) &&
+  Boolean(resolutionDate.value) &&
+  (overwriteAssignments.value || procesosSeleccionados.value.every(p => !p.resolution_number && !p.radicado_number))
+);
+
+const procesosElegibles = computed(() =>
+  overwriteAssignments.value
+    ? procesosFiltrados.value
+    : procesosFiltrados.value.filter(p => !p.resolution_number && !p.radicado_number)
+);
+
+const procesosConResolucion = computed(() =>
+  procesosFiltrados.value.filter(p => p.resolution_number && p.resolution_date)
 );
 
 // Métodos
 const loadProcesos = async () => {
   loading.value = true;
   try {
-    const response = await api.get('/processes/');
+    const response = await api.get('/processes/resolution-obligations', {
+      params: {
+        state_code: filtroEstado.value || undefined,
+        limit: 10000
+      }
+    });
     procesos.value = response.data || [];
-    aplicarFiltros();
+    procesosFiltrados.value = procesos.value;
+    procesosSeleccionados.value = [];
   } catch (error) {
-    console.error('Error cargando procesos:', error);
+    console.error('Error cargando obligaciones:', error);
   } finally {
     loading.value = false;
   }
@@ -498,7 +623,9 @@ const loadConfig = async () => {
     const response = await api.get('/processes/config');
     if (response.data) {
       config.value = { ...config.value, ...response.data };
-      originalConfig.value = { ...config.value };
+      if (!numeroRadicadoInicial.value) {
+        numeroRadicadoInicial.value = config.value.radicado_inicial + 1;
+      }
     }
   } catch (error) {
     console.error('Error cargando configuración:', error);
@@ -506,20 +633,143 @@ const loadConfig = async () => {
 };
 
 const aplicarFiltros = () => {
-  if (!filtroEstado.value) {
-    procesosFiltrados.value = procesos.value.filter(p => 
-      p.current_state?.code === 'PENDIENTE_ASIGNACION_RESOLUCION'
-    );
-  } else {
-    procesosFiltrados.value = procesos.value.filter(p => 
-      p.current_state?.code === filtroEstado.value
-    );
-  }
+  loadProcesos();
 };
 
 const limpiarFiltros = () => {
   filtroEstado.value = null;
   aplicarFiltros();
+};
+
+const seleccionarTodas = () => {
+  procesosSeleccionados.value = [...procesosElegibles.value];
+};
+
+const deseleccionarTodas = () => {
+  procesosSeleccionados.value = [];
+};
+
+const seleccionarConResolucion = () => {
+  procesosSeleccionados.value = [...procesosConResolucion.value];
+};
+
+const generarCorrespondencia = async () => {
+  const seleccion = procesosSeleccionados.value.filter(p => p.resolution_number && p.resolution_date);
+  if (seleccion.length !== procesosSeleccionados.value.length) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Selección inválida',
+      detail: 'Todas las obligaciones seleccionadas deben tener resolución y fecha',
+      life: 5000
+    });
+    return;
+  }
+
+  generandoCorrespondencia.value = true;
+  try {
+    const response = await api.post('/documents/correspondence/batch', {
+      obligation_ids: seleccion.map(p => p.obligation_id)
+    }, { responseType: 'blob' });
+    const blobUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/zip' }));
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `correspondencia_certificada_${new Date().toISOString().slice(0, 10)}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
+    toast.add({
+      severity: 'success',
+      summary: 'Correspondencia generada',
+      detail: `ZIP generado con ${seleccion.length} documentos individuales`,
+      life: 5000
+    });
+  } catch (error) {
+    let detail = 'No se pudo generar la correspondencia';
+    if (error.response?.data instanceof Blob) {
+      try {
+        const errorBody = JSON.parse(await error.response.data.text());
+        detail = errorBody.detail || detail;
+      } catch (_) {
+        // Mantener el mensaje genérico si la respuesta no es JSON.
+      }
+    }
+    toast.add({ severity: 'error', summary: 'Error', detail, life: 6000 });
+  } finally {
+    generandoCorrespondencia.value = false;
+  }
+};
+
+const generarImpresionPorRango = async (format = 'docx') => {
+  if (printRange.value.from > printRange.value.to) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Rango inválido',
+      detail: 'La resolución inicial no puede superar la resolución final',
+      life: 5000
+    });
+    return;
+  }
+
+  const printWindow = format === 'pdf' ? window.open('', '_blank') : null;
+  if (format === 'pdf' && printWindow) {
+    printWindow.document.write(`<!doctype html><html lang="es"><head><title>Generando PDF...</title></head>
+      <body style="font-family:Arial,sans-serif;padding:32px;color:#334155">
+        <h2>Generando correspondencia</h2><p>Espere mientras se prepara el PDF del rango ${printRange.value.from} al ${printRange.value.to}...</p>
+      </body></html>`);
+    printWindow.document.close();
+  }
+  generandoImpresion.value = true;
+  try {
+    const response = await api.post('/documents/correspondence/print-range', {
+      resolution_from: printRange.value.from,
+      resolution_to: printRange.value.to,
+      output_format: format
+    }, { responseType: 'blob' });
+    const blobUrl = URL.createObjectURL(new Blob([response.data], {
+      type: format === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }));
+    if (format === 'pdf' && printWindow) {
+      const fileName = `impresion_correspondencia_${printRange.value.from}_${printRange.value.to}.pdf`;
+      printWindow.document.open();
+      printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${fileName}</title>
+        <style>html,body{height:100%;margin:0;font-family:Arial,sans-serif;background:#e2e8f0}.bar{height:56px;box-sizing:border-box;padding:10px 18px;background:#1e293b;color:white;display:flex;align-items:center;gap:12px}.bar span{flex:1}.bar a,.bar button{border:0;border-radius:6px;padding:9px 14px;background:#0ea5e9;color:white;text-decoration:none;cursor:pointer;font-weight:600}object{display:block;width:100%;height:calc(100% - 56px);border:0}.fallback{padding:30px;background:white}</style></head>
+        <body><div class="bar"><span>Correspondencia: resoluciones ${printRange.value.from} a ${printRange.value.to}</span><a href="${blobUrl}" download="${fileName}">Descargar PDF</a><button onclick="window.print()">Imprimir</button></div>
+        <object data="${blobUrl}" type="application/pdf"><div class="fallback"><p>El navegador no puede mostrar el PDF dentro de la página.</p><a href="${blobUrl}" download="${fileName}">Descargar el PDF generado</a></div></object></body></html>`);
+      printWindow.document.close();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10 * 60 * 1000);
+    } else {
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `impresion_correspondencia_${printRange.value.from}_${printRange.value.to}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    }
+    toast.add({
+      severity: 'success',
+      summary: 'Archivo de impresión generado',
+      detail: format === 'pdf' ? 'El PDF se abrió en una pestaña nueva' : 'Abra el DOCX descargado y envíelo a la impresora',
+      life: 6000
+    });
+  } catch (error) {
+    if (printWindow) printWindow.close();
+    let detail = 'No se pudo generar el archivo de impresión';
+    if (error.response?.data instanceof Blob) {
+      try {
+        const errorBody = JSON.parse(await error.response.data.text());
+        detail = errorBody.detail || detail;
+      } catch (_) {
+        // Mantener mensaje genérico.
+      }
+    }
+    toast.add({ severity: 'error', summary: 'Error', detail, life: 6000 });
+  } finally {
+    generandoImpresion.value = false;
+  }
 };
 
 const formatCurrency = (value) => {
@@ -533,7 +783,10 @@ const formatCurrency = (value) => {
 
 const formatDate = (dateString) => {
   if (!dateString) return '-';
-  const date = new Date(dateString);
+  const dateOnly = String(dateString).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(dateString);
   return date.toLocaleDateString('es-CO', {
     year: 'numeric',
     month: 'short',
@@ -541,41 +794,13 @@ const formatDate = (dateString) => {
   });
 };
 
-const openConfigDialog = () => {
-  configDialogVisible.value = true;
-};
-
-const restoreConfig = () => {
-  config.value = { ...originalConfig.value };
-};
-
-const guardarConfiguracion = async () => {
-  try {
-    await api.post('/processes/config', config.value);
-    originalConfig.value = { ...config.value };
-    toast.add({ 
-      severity: 'success', 
-      summary: 'Éxito', 
-      detail: 'Configuración guardada correctamente',
-      life: 3000 
-    });
-    configDialogVisible.value = false;
-  } catch (error) {
-    toast.add({ 
-      severity: 'error', 
-      summary: 'Error', 
-      detail: 'No se pudo guardar la configuración',
-      life: 5000 
-    });
-  }
-};
-
 const calcularConsecutivos = () => {
   const cantidad = procesosSeleccionados.value.length;
-  numeroResolucionInicial.value = config.value.numero_actual + 1;
-  numeroResolucionFinal.value = config.value.numero_actual + cantidad;
-  numeroRadicadoInicial.value = config.value.radicado_inicial + 1;
-  numeroRadicadoFinal.value = config.value.radicado_inicial + cantidad;
+  resolutionNumberFinal.value = resolutionNumber.value + cantidad - 1;
+  if (!numeroRadicadoInicial.value) {
+    numeroRadicadoInicial.value = config.value.radicado_inicial + 1;
+  }
+  numeroRadicadoFinal.value = numeroRadicadoInicial.value + cantidad - 1;
   consecutivosCalculados.value = true;
 };
 
@@ -587,38 +812,75 @@ const openAsignacionDialog = () => {
 const asignarResoluciones = () => {
   // Abre el dialog de confirmación
   if (procesosSeleccionados.value.length === 0) {
-    toast.add({ severity: 'warn', summary: 'Advertencia', detail: 'Seleccione al menos un proceso' });
+    toast.add({ severity: 'warn', summary: 'Advertencia', detail: 'Seleccione al menos una obligación' });
+    return;
+  }
+  if (!resolutionNumber.value) {
+    toast.add({ severity: 'warn', summary: 'Dato requerido', detail: 'Ingrese el número de resolución', life: 4000 });
+    return;
+  }
+  if (!resolutionYear.value) {
+    toast.add({ severity: 'warn', summary: 'Dato requerido', detail: 'Ingrese el año de resolución', life: 4000 });
+    return;
+  }
+  if (!resolutionDate.value) {
+    toast.add({ severity: 'warn', summary: 'Dato requerido', detail: 'Ingrese la fecha de resolución', life: 4000 });
+    return;
+  }
+  if (!numeroRadicadoInicial.value) {
+    toast.add({ severity: 'warn', summary: 'Dato requerido', detail: 'Ingrese el número inicial de radicado', life: 4000 });
+    return;
+  }
+  if (!puedeAsignarResoluciones.value) {
+    toast.add({ severity: 'warn', summary: 'Advertencia', detail: 'La selección contiene obligaciones que ya tienen resolución asignada' });
     return;
   }
   openAsignacionDialog();
 };
 
 const confirmarAsignacion = async () => {
+  if (!resolutionNumber.value || !resolutionYear.value || !resolutionDate.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Datos requeridos',
+      detail: 'Ingrese número, año y fecha de resolución',
+      life: 4000
+    });
+    return;
+  }
   asignando.value = true;
   try {
     const payload = {
-      process_ids: procesosSeleccionados.value.map(p => p.id),
-      resolucion_inicial: numeroResolucionInicial.value,
+      obligation_ids: procesosSeleccionados.value.map(p => p.obligation_id),
+      resolution_initial: resolutionNumber.value,
       radicado_inicial: numeroRadicadoInicial.value,
-      observaciones: observaciones.value
+      prefijo_radicado: config.value.prefijo_radicado,
+      resolution_year: resolutionYear.value,
+      resolution_date: resolutionDate.value,
+      state_code: filtroEstado.value || 'PENDIENTE_ASIGNACION_RESOLUCION',
+      observaciones: observaciones.value,
+      overwrite: overwriteAssignments.value
     };
     
-    await api.post('/processes/assign-resolution/', payload);
+    const response = await api.post('/processes/assign-resolution/', payload);
+    const assignedCount = response.data?.assigned_count || procesosSeleccionados.value.length;
     
     // Actualizar números
-    config.value.numero_actual = numeroResolucionFinal.value;
-    config.value.radicado_inicial = numeroRadicadoFinal.value;
+    config.value = { ...config.value, ...(response.data?.config || {}) };
+    resolutionNumber.value = config.value.numero_actual + 1;
+    numeroRadicadoInicial.value = config.value.radicado_inicial + 1;
     
     await loadProcesos();
     asignacionDialogVisible.value = false;
     procesosSeleccionados.value = [];
     consecutivosCalculados.value = false;
     observaciones.value = '';
+    overwriteAssignments.value = false;
     
     toast.add({ 
       severity: 'success', 
       summary: 'Éxito', 
-      detail: `Resoluciones asignadas a ${procesosSeleccionados.value.length} procesos`,
+      detail: `Resoluciones asignadas a ${assignedCount} obligaciones`,
       life: 5000 
     });
   } catch (error) {
@@ -648,15 +910,21 @@ onMounted(() => {
 
 <style scoped>
 .resoluciones-view {
-  padding: 1rem;
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
+  padding: 0;
 }
 
 .view-header {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.resolution-data {
+  padding: 1rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-50);
 }
 
 @media (min-width: 768px) {

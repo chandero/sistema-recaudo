@@ -2,11 +2,11 @@
   <div class="clientes-view">
       <div class="view-header">
         <div>
-          <h1>Gestión de Clientes</h1>
-          <p>Administre la información de contribuyentes y clientes</p>
+          <h1>{{ t('components.client_view.title') }}</h1>
+          <p>{{ t('components.client_view.subtitle') }}</p>
         </div>
         <Button 
-          label="Nuevo Cliente" 
+          :label="t('components.client_view.new_client')" 
           icon="pi pi-plus" 
           @click="showNewClientDialog = true"
         />
@@ -18,14 +18,14 @@
           <div class="filters-grid">
             <InputText 
               v-model="filters.search" 
-              placeholder="Buscar por nombre o identificación..."
+              :placeholder="t('components.client_view.search_placeholder')"
               class="w-full"
-              @keyup.enter="loadClients"
+              @keyup.enter="loadClients(true)"
             />
             <Button 
-              label="Buscar" 
+              :label="t('common.search')" 
               icon="pi pi-search" 
-              @click="loadClients"
+              @click="loadClients(true)"
             />
           </div>
         </template>
@@ -39,22 +39,28 @@
             :loading="loading"
             stripedRows
             paginator
-            :rows="10"
+            lazy
+            :first="first"
+            :rows="rows"
+            :totalRecords="totalRecords"
             :rowsPerPageOptions="[5, 10, 25, 50]"
+            :currentPageReportTemplate="t('components.client_view.page_report')"
+            paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+            @page="onPage"
           >
-            <Column field="identification" header="Identificación" style="width: 150px"></Column>
-            <Column field="name" header="Nombre / Razón Social"></Column>
-            <Column field="email" header="Email" style="width: 200px"></Column>
-            <Column field="phone" header="Teléfono" style="width: 120px"></Column>
-            <Column field="is_active" header="Estado" style="width: 100px">
+            <Column field="identification" :header="t('forms.identification')" style="width: 150px"></Column>
+            <Column field="name" :header="t('components.client_view.full_name')"></Column>
+            <Column field="email" :header="t('forms.email')" style="width: 200px"></Column>
+            <Column field="phone" :header="t('components.client_view.phone')" style="width: 120px"></Column>
+            <Column field="is_active" :header="t('forms.status')" style="width: 100px">
               <template #body="slotProps">
                 <Tag 
-                  :value="slotProps.data.is_active ? 'Activo' : 'Inactivo'" 
+                  :value="slotProps.data.is_active ? t('components.client_view.active') : t('components.client_view.inactive')" 
                   :severity="slotProps.data.is_active ? 'success' : 'danger'"
                 />
               </template>
             </Column>
-            <Column header="Acciones" style="width: 150px">
+            <Column :header="t('common.actions')" style="width: 150px">
               <template #body="slotProps">
                 <Button 
                   icon="pi pi-pencil" 
@@ -62,7 +68,7 @@
                   severity="info"
                   size="small"
                   @click="editClient(slotProps.data)"
-                  v-tooltip="'Editar'"
+                  v-tooltip="t('common.edit')"
                 />
                 <Button 
                   icon="pi pi-trash" 
@@ -70,7 +76,7 @@
                   severity="danger"
                   size="small"
                   @click="deleteClient(slotProps.data)"
-                  v-tooltip="'Eliminar'"
+                  v-tooltip="t('components.client_view.remove')"
                 />
               </template>
             </Column>
@@ -82,68 +88,68 @@
       <Dialog 
         v-model:visible="showNewClientDialog" 
         modal 
-        header="Nuevo Cliente"
+        :header="t('components.client_view.new_client_dialog')"
         :style="{ width: '500px' }"
         :closable="false"
       >
         <form @submit.prevent="saveClient">
           <div class="field mb-4">
-            <label for="identification" class="block font-medium mb-2">Identificación</label>
+            <label for="identification" class="block font-medium mb-2">{{ t('forms.identification') }}</label>
             <InputText 
               id="identification" 
-              v-model="clientForm.identification"
+              v-model="form.identification"
               class="w-full"
               required
             />
           </div>
 
           <div class="field mb-4">
-            <label for="name" class="block font-medium mb-2">Nombre / Razón Social</label>
+            <label for="name" class="block font-medium mb-2">{{ t('forms.name') }}</label>
             <InputText 
               id="name" 
-              v-model="clientForm.name"
+              v-model="form.name"
               class="w-full"
               required
             />
           </div>
 
           <div class="field mb-4">
-            <label for="email" class="block font-medium mb-2">Email</label>
+            <label for="email" class="block font-medium mb-2">{{ t('forms.email') }}</label>
             <InputText 
               id="email" 
-              v-model="clientForm.email"
+              v-model="form.email"
               type="email"
               class="w-full"
             />
           </div>
 
           <div class="field mb-4">
-            <label for="phone" class="block font-medium mb-2">Teléfono</label>
+            <label for="phone" class="block font-medium mb-2">{{ t('components.client_view.phone') }}</label>
             <InputText 
               id="phone" 
-              v-model="clientForm.phone"
+              v-model="form.phone"
               class="w-full"
             />
           </div>
 
           <div class="field mb-4">
-            <label for="address" class="block font-medium mb-2">Dirección</label>
+            <label for="address" class="block font-medium mb-2">{{ t('forms.address') }}</label>
             <InputText 
               id="address" 
-              v-model="clientForm.address"
+              v-model="form.address"
               class="w-full"
             />
           </div>
 
           <div class="flex justify-end gap-2">
             <Button 
-              label="Cancelar" 
+              :label="t('common.cancel')" 
               severity="secondary" 
               @click="cancelForm"
               type="button"
             />
             <Button 
-              label="Guardar" 
+              :label="t('common.save')" 
               icon="pi pi-check" 
               type="submit"
               :loading="saving"
@@ -158,10 +164,27 @@
 import { ref, onMounted } from 'vue'
 import { clientService } from '../services/api'
 import { useToast } from 'primevue/usetoast'
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import { useForm } from '@/composables/useForm'
+import { useI18n } from '@/composables/useI18n'
 
 const toast = useToast()
+const { handleError } = useErrorHandler()
+const { t } = useI18n() // Usar la función de traducción
+
+// Inicializar el composable de formulario con los campos de cliente
+const { form, resetForm: resetClientForm } = useForm({
+  identification: '',
+  name: '',
+  email: '',
+  phone: '',
+  address: ''
+})
 
 const clients = ref([])
+const totalRecords = ref(0)
+const first = ref(0)
+const rows = ref(10)
 const loading = ref(false)
 const saving = ref(false)
 const showNewClientDialog = ref(false)
@@ -171,37 +194,35 @@ const filters = ref({
   search: ''
 })
 
-const clientForm = ref({
-  identification: '',
-  name: '',
-  email: '',
-  phone: '',
-  address: ''
-})
-
-const loadClients = async () => {
+const loadClients = async (resetPage = false) => {
+  if (resetPage) first.value = 0
   loading.value = true
   try {
     const response = await clientService.getAll({
+      skip: first.value,
+      limit: rows.value,
       search: filters.value.search || undefined
     })
     clients.value = response.data || []
+    totalRecords.value = Number(response.headers['x-total-count']) || 0
   } catch (error) {
     console.error('Error loading clients:', error)
-    toast.add({
-      severity: 'error',
-      summary: 'Error',
-      detail: 'No se pudieron cargar los clientes',
-      life: 3000
-    })
+    handleError(error, t('messages.errors.generic'))
   } finally {
     loading.value = false
   }
 }
 
+const onPage = (event) => {
+  first.value = event.first
+  rows.value = event.rows
+  loadClients()
+}
+
 const editClient = (client) => {
   editingClient.value = client
-  clientForm.value = { ...client }
+  // Actualizar el formulario con los datos del cliente
+  Object.assign(form, { ...client })
   showNewClientDialog.value = true
 }
 
@@ -209,19 +230,19 @@ const saveClient = async () => {
   saving.value = true
   try {
     if (editingClient.value) {
-      await clientService.update(editingClient.value.id, clientForm.value)
+      await clientService.update(editingClient.value.id, form)
       toast.add({
         severity: 'success',
-        summary: 'Éxito',
-        detail: 'Cliente actualizado correctamente',
+        summary: t('common.success'),
+        detail: t('messages.success.updated'),
         life: 3000
       })
     } else {
-      await clientService.create(clientForm.value)
+      await clientService.create(form)
       toast.add({
         severity: 'success',
-        summary: 'Éxito',
-        detail: 'Cliente creado correctamente',
+        summary: t('common.success'),
+        detail: t('messages.success.created'),
         life: 3000
       })
     }
@@ -231,19 +252,14 @@ const saveClient = async () => {
     loadClients()
   } catch (error) {
     console.error('Error saving client:', error)
-    toast.add({
-      severity: 'error',
-      summary: 'Error',
-      detail: error.response?.data?.detail || 'Error al guardar el cliente',
-      life: 3000
-    })
+    handleError(error, 'Error al guardar el cliente')
   } finally {
     saving.value = false
   }
 }
 
 const deleteClient = async (client) => {
-  if (!confirm(`¿Está seguro de eliminar el cliente "${client.name}"?`)) {
+  if (!confirm(t('messages.confirm.delete'))) {
     return
   }
 
@@ -251,31 +267,23 @@ const deleteClient = async (client) => {
     await clientService.delete(client.id)
     toast.add({
       severity: 'success',
-      summary: 'Éxito',
-      detail: 'Cliente eliminado correctamente',
+      summary: t('common.success'),
+      detail: t('messages.success.deleted'),
       life: 3000
     })
+    if (clients.value.length === 1 && first.value > 0) {
+      first.value = Math.max(0, first.value - rows.value)
+    }
     loadClients()
   } catch (error) {
     console.error('Error deleting client:', error)
-    toast.add({
-      severity: 'error',
-      summary: 'Error',
-      detail: 'Error al eliminar el cliente',
-      life: 3000
-    })
+    handleError(error, 'Error al eliminar el cliente')
   }
 }
 
 const cancelForm = () => {
   editingClient.value = null
-  clientForm.value = {
-    identification: '',
-    name: '',
-    email: '',
-    phone: '',
-    address: ''
-  }
+  resetClientForm()
 }
 
 onMounted(() => {

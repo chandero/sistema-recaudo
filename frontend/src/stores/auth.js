@@ -1,74 +1,99 @@
 import { defineStore } from 'pinia'
-import { authService } from '../services/api'
+import { authService } from '@/services/api'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    user: null,
     token: localStorage.getItem('access_token') || null,
-    role: localStorage.getItem('user_role') || null,
+    currentUser: null,
+    loading: false,
+    error: null
   }),
 
   getters: {
     isAuthenticated: (state) => !!state.token,
-    currentUser: (state) => state.user,
-    userRole: (state) => state.role,
-    isPlatformAdmin: (state) => state.role === 'platform_admin',
+    getToken: (state) => state.token,
+    getUserRole: (state) => state.currentUser?.role || null
   },
 
   actions: {
     async login(email, password) {
+      this.loading = true
+      this.error = null
+      
       try {
         const response = await authService.login(email, password)
-        this.setToken(response.access_token)
-        this.role = response.user?.role || 'user'
-        this.user = response.user
+        this.token = response.access_token
+        this.currentUser = response.user
+        
+        // Guardar token en localStorage
+        localStorage.setItem('access_token', this.token)
+        localStorage.setItem('user_role', response.user?.role || 'user')
         
         return { success: true }
       } catch (error) {
-        console.error('Login error:', error)
+        this.error = error.response?.data?.detail || 'Credenciales inválidas'
+        this.token = null
+        this.currentUser = null
+        
+        // Limpiar cualquier dato de sesión anterior
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('user_role')
+        
         return { 
           success: false, 
-          error: error.response?.data?.detail || 'Error al iniciar sesión' 
+          error: this.error 
         }
+      } finally {
+        this.loading = false
       }
     },
 
-    async fetchCurrentUser() {
+    async getCurrentUser() {
       if (!this.token) {
-        return null;
+        throw new Error('No hay token disponible')
       }
-      
+
       try {
-        // Intentar obtener el usuario actual desde el backend
-        const response = await authService.getCurrentUser();
-        this.user = response.data;
-        this.role = response.data?.role || 'user';
-        return this.user;
+        const response = await authService.getCurrentUser()
+        this.currentUser = response.data
+        return response.data
       } catch (error) {
-        console.error('Error fetching current user:', error);
-        // Si hay un error de autenticación, limpiar el token
-        if (error.response?.status === 401) {
-          this.logout();
+        console.error('Error obteniendo usuario actual:', error)
+        
+        // Si el error es un 401 o 403, el token probablemente haya expirado
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          this.logout(); // Limpiar sesión si el token no es válido
         }
-        return null;
+        
+        // Lanzar el error para que pueda ser manejado por el código que llama
+        throw error
       }
+    },
+
+    // Alias para compatibilidad
+    async fetchCurrentUser() {
+      return this.getCurrentUser();
     },
 
     logout() {
-      authService.logout()
       this.token = null
-      this.role = null
-      this.user = null
-    },
-
-    setToken(token) {
-      this.token = token
-      localStorage.setItem('access_token', token)
+      this.currentUser = null
+      this.error = null
+      
+      // Remover del localStorage
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('user_role')
     },
 
     clearToken() {
       this.token = null
       localStorage.removeItem('access_token')
+      localStorage.removeItem('user_role')
+    },
+
+    setToken(token) {
+      this.token = token
+      localStorage.setItem('access_token', token)
     }
   }
 })

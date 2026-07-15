@@ -27,10 +27,16 @@
       :paginator="hasPaginator" 
       :rows="defaultRows" 
       :rowsPerPageOptions="rowsPerPageOptions"
+      :totalRecords="totalRecords"
+      :lazy="lazy"
+      :first="first"
       :loading="loading"
       :globalFilterFields="filterFields"
       :selection="selection"
+      :currentPageReportTemplate="currentPageReportTemplate"
+      paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
       @selection-change="onSelectionChange"
+      @page="onPage"
       removableSort
       tableStyle="min-width: 100%"
     >
@@ -110,13 +116,29 @@ const props = defineProps({
     type: Array,
     default: () => [10, 20, 50]
   },
+  totalRecords: {
+    type: Number,
+    default: 0
+  },
+  lazy: {
+    type: Boolean,
+    default: false
+  },
+  first: {
+    type: Number,
+    default: 0
+  },
+  currentPageReportTemplate: {
+    type: String,
+    default: 'Mostrando {first} - {last} de {totalRecords}'
+  },
   filterFields: {
     type: Array,
     default: () => []
   }
 });
 
-const emit = defineEmits(['search-change', 'refresh', 'selection-change']);
+const emit = defineEmits(['search-change', 'refresh', 'selection-change', 'page']);
 
 const searchValue = ref('');
 
@@ -132,6 +154,10 @@ const onSelectionChange = (event) => {
   emit('selection-change', event.value);
 };
 
+const onPage = (event) => {
+  emit('page', event);
+};
+
 // Watch for external search value changes
 watch(() => props.searchValue, (newVal) => {
   searchValue.value = newVal;
@@ -143,6 +169,10 @@ watch(() => props.searchValue, (newVal) => {
   background: var(--surface-card);
   border-radius: 8px;
   padding: 1rem;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  overflow-x: auto;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
@@ -158,6 +188,8 @@ watch(() => props.searchValue, (newVal) => {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
 }
 
 .search-field {
@@ -173,6 +205,7 @@ watch(() => props.searchValue, (newVal) => {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  margin-left: auto;
 }
 
 .empty-message, .loading-message {

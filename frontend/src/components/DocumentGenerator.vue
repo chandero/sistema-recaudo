@@ -191,6 +191,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import FormWrapper from '@/components/FormWrapper.vue';
+import { useErrorHandler } from '@/composables/useErrorHandler';
 
 const props = defineProps({
   visible: {
@@ -212,6 +213,9 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:visible', 'document-generated']);
+
+// Usar el composable de manejo de errores
+const { handleError } = useErrorHandler();
 
 // Document data
 const documentData = ref({
@@ -373,34 +377,38 @@ const getCurrentDate = () => {
 
 // Generate document
 const generateDocument = async () => {
-  // Validar campos requeridos
-  if (!documentData.value.clientId && !documentData.value.bulkGeneration) {
-    alert('Por favor seleccione un cliente o habilite la generación masiva');
-    return;
-  }
-  
-  if (!documentData.value.obligationId && documentData.value.type !== 'resolution' && !documentData.value.bulkGeneration) {
-    alert('Por favor seleccione una obligación');
-    return;
-  }
-  
-  // Si es resolución, asegurarse de que tenga número y fecha
-  if (documentData.value.type === 'resolution') {
-    if (!documentData.value.resolution.number) {
-      alert('Por favor ingrese o genere un número de resolución');
+  try {
+    // Validar campos requeridos
+    if (!documentData.value.clientId && !documentData.value.bulkGeneration) {
+      alert('Por favor seleccione un cliente o habilite la generación masiva');
       return;
     }
-    if (!documentData.value.resolution.date) {
-      alert('Por favor ingrese la fecha de resolución');
+    
+    if (!documentData.value.obligationId && documentData.value.type !== 'resolution' && !documentData.value.bulkGeneration) {
+      alert('Por favor seleccione una obligación');
       return;
     }
+    
+    // Si es resolución, asegurarse de que tenga número y fecha
+    if (documentData.value.type === 'resolution') {
+      if (!documentData.value.resolution.number) {
+        alert('Por favor ingrese o genere un número de resolución');
+        return;
+      }
+      if (!documentData.value.resolution.date) {
+        alert('Por favor ingrese la fecha de resolución');
+        return;
+      }
+    }
+    
+    // Emitir evento para generar el documento
+    emit('document-generated', { ...documentData.value });
+    
+    // Cerrar diálogo
+    emit('update:visible', false);
+  } catch (error) {
+    handleError(error, 'Error al generar el documento');
   }
-  
-  // Emitir evento para generar el documento
-  emit('document-generated', { ...documentData.value });
-  
-  // Cerrar diálogo
-  emit('update:visible', false);
 };
 
 // Cancel operation

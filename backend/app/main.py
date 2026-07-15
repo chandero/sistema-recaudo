@@ -21,6 +21,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
 )
 
 # Include API router
@@ -60,56 +61,56 @@ async def startup_event():
         from app.db.seed_workflow import seed_workflow, get_initial_workflow_states
         
         session = next(get_session())
+
+        # Crear un tenant por defecto para demo
+        from app.models.tenant import Tenant
+        tenant = session.exec(
+            select(Tenant).where(Tenant.code == "demo")
+        ).first()
+        
+        if not tenant:
+            tenant = Tenant(
+                name="Demo Tenant",
+                code="demo",
+                is_active=True
+            )
+            session.add(tenant)
+            session.commit()
+            session.refresh(tenant)
+            logger.info(f"Created default tenant: {tenant.id}")
         
         # Verificar si ya hay estados
         statement = select(WorkflowState)
         existing_states = session.exec(statement).all()
         
         if not existing_states:
-            # Crear un tenant por defecto para demo
-            from app.models.tenant import Tenant
-            tenant = session.exec(
-                select(Tenant).where(Tenant.code == "demo")
-            ).first()
-            
-            if not tenant:
-                tenant = Tenant(
-                    name="Demo Tenant",
-                    code="demo",
-                    is_active=True
-                )
-                session.add(tenant)
-                session.commit()
-                session.refresh(tenant)
-                logger.info(f"Created default tenant: {tenant.id}")
-            
             # Seed workflow states
             stats = seed_workflow(session, tenant.id)
             logger.info(f"Workflow seeded: {stats}")
-            
-            # Crear usuario admin por defecto
-            from app.models.user import User, UserRole
-            from app.core.security import get_password_hash
-            
-            admin_user = session.exec(
-                select(User).where(User.username == "admin")
-            ).first()
-            
-            if not admin_user:
-                admin_user = User(
-                    username="admin",
-                    email="admin@sistema-cobro.com",
-                    full_name="Administrador del Sistema",
-                    hashed_password=get_password_hash("admin123"),
-                    role=UserRole.PLATFORM_ADMIN,
-                    is_active=True,
-                    is_platform_admin=True,
-                    tenant_id=tenant.id
-                )
-                session.add(admin_user)
-                session.commit()
-                session.refresh(admin_user)
-                logger.info(f"Created default admin user: {admin_user.id}")
+
+        # Crear usuario admin por defecto
+        from app.models.user import User, UserRole
+        from app.core.security import get_password_hash
+        
+        admin_user = session.exec(
+            select(User).where(User.username == "admin")
+        ).first()
+        
+        if not admin_user:
+            admin_user = User(
+                username="admin",
+                email="admin@sistema-cobro.com",
+                full_name="Administrador del Sistema",
+                hashed_password=get_password_hash("admin123"),
+                role=UserRole.PLATFORM_ADMIN,
+                is_active=True,
+                is_platform_admin=True,
+                tenant_id=tenant.id
+            )
+            session.add(admin_user)
+            session.commit()
+            session.refresh(admin_user)
+            logger.info(f"Created default admin user: {admin_user.id}")
             
     except Exception as e:
         logger.warning(f"Could not seed workflow: {str(e)}")

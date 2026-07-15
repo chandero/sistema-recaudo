@@ -2,6 +2,7 @@
 from app.schemas.import_map import (
     ImportBatchBase,
     ImportBatchCreate,
+    ImportBatchUpdate,
     ImportBatchResponse,
     ImportBatchStatusResponse
 )
@@ -9,6 +10,7 @@ from app.schemas.import_map import (
 __all__ = [
     "ImportBatchBase",
     "ImportBatchCreate", 
+    "ImportBatchUpdate",
     "ImportBatchResponse",
     "ImportBatchStatusResponse"
 ]

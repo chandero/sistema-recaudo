@@ -35,6 +35,18 @@ class ImportBatchBase(BaseModel):
 class ImportBatchCreate(ImportBatchBase):
     pass
 
+class ImportBatchUpdate(BaseModel):
+    status: Optional[str] = None
+    total_rows: Optional[int] = None
+    processed_rows: Optional[int] = None
+    success_rows: Optional[int] = None
+    error_rows: Optional[int] = None
+    mapping_template_id: Optional[int] = None
+    custom_mapping: Optional[Dict[str, Any]] = None
+    import_options: Optional[Dict[str, Any]] = None
+    errors_log: Optional[List[Dict[str, Any]]] = None
+    completed_at: Optional[datetime] = None
+
 class ImportBatchResponse(ImportBatchBase):
     id: int
     tenant_id: int

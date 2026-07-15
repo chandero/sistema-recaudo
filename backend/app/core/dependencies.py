@@ -17,11 +17,13 @@ async def get_current_user(
 ) -> User:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: int = payload.get("sub")
-        tenant_id: int = payload.get("tenant_id")
+        user_id = payload.get("user_id") or payload.get("sub")
         if user_id is None:
             raise CredentialsException()
+        user_id = int(user_id)
     except JWTError:
+        raise CredentialsException()
+    except (TypeError, ValueError):
         raise CredentialsException()
     
     statement = select(User).where(User.id == user_id)
