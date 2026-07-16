@@ -404,8 +404,15 @@ def process_import_batch(batch_id: int, tenant_id: int) -> None:
                     concept_column = resolved_columns.get("obligation.concept")
                     issue_date = parse_date_value(row[issue_column] if issue_column else None, now)
                     due_date = parse_date_value(row[due_column] if due_column else None, issue_date)
-                    concept = str(row[concept_column]).strip() if concept_column and pd.notna(row[concept_column]) else "Importación de cartera"
-                    description = f"{concept} - {obligation_number}"
+                    
+                    # Obtener el concepto si está disponible, de lo contrario dejarlo como None
+                    concept = str(row[concept_column]).strip() if concept_column and pd.notna(row[concept_column]) else None
+                    
+                    # Usar el concepto como descripción, o el número de obligación si no hay concepto
+                    if concept:
+                        description = f"{concept} - {obligation_number}" if obligation_number != concept else concept
+                    else:
+                        description = obligation_number  # Solo usar el número de obligación como descripción
 
                     if uses_legacy_obligations:
                         existing_obligation = session.execute(

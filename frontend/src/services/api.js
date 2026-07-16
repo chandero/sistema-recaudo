@@ -60,9 +60,20 @@ export const authService = {
     return response.data
   },
 
-  logout() {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('user_role')
+  async logout() {
+    try {
+      // Llamar al endpoint de logout del backend
+      await apiClient.post('/auth/logout')
+    } catch (error) {
+      console.error('Error during logout:', error)
+      // Continuar con el logout local incluso si el backend falla
+    } finally {
+      // Limpiar datos locales
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('user_role')
+      // Limpiar el token de la instancia de axios
+      delete apiClient.defaults.headers.common['Authorization']
+    }
   },
 
   // Método para obtener el usuario actual desde el backend

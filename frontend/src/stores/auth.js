@@ -75,14 +75,23 @@ export const useAuthStore = defineStore('auth', {
       return this.getCurrentUser();
     },
 
-    logout() {
-      this.token = null
-      this.currentUser = null
-      this.error = null
-      
-      // Remover del localStorage
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('user_role')
+    async logout() {
+      try {
+        // Llamar al nuevo endpoint de logout del backend
+        await apiClient.post('/api/v2/auth/logout');
+      } catch (error) {
+        console.error('Error during backend logout:', error);
+        // Continuar con el logout local incluso si el backend falla
+      } finally {
+        // Limpiar estado local
+        this.token = null
+        this.currentUser = null
+        this.error = null
+        
+        // Remover del localStorage
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('user_role')
+      }
     },
 
     clearToken() {

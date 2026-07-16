@@ -10,7 +10,6 @@ import glob
 import re
 import zipfile
 import subprocess
-from copy import deepcopy
 from datetime import datetime
 from typing import List, Optional
 
@@ -19,7 +18,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from num2words import num2words
-from docx import Document as DocxDocument
+from pypdf import PdfWriter
 
 from app.core.database import get_session
 from app.core.dependencies import get_current_active_user
@@ -146,50 +145,61 @@ def generate_correspondence_print_range(
         )
         rendered_paths.append(output_path)
 
-    master = DocxDocument(rendered_paths[0])
-    for path in rendered_paths[1:]:
-        master.add_page_break()
-        source = DocxDocument(path)
-        for element in source.element.body:
-            if not element.tag.endswith("}sectPr"):
-                master.element.body.append(deepcopy(element))
-    output_path = os.path.join(
-        OUTPUT_DIR,
-        f"impresion_correspondencia_{request.resolution_from}_{request.resolution_to}_{stamp}.docx",
-    )
-    master.save(output_path)
     if request.output_format == "pdf":
-        profile_dir = os.path.join(batch_dir, "libreoffice-profile")
-        os.makedirs(profile_dir, exist_ok=True)
-        conversion = subprocess.run(
-            [
-                "libreoffice",
-                "--headless",
-                f"-env:UserInstallation=file://{os.path.abspath(profile_dir)}",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                OUTPUT_DIR,
-                output_path,
-            ],
-            capture_output=True,
-            text=True,
-            # Un rango completo puede contener miles de páginas. LibreOffice
-            # necesita más de tres minutos para convertir lotes grandes.
-            timeout=1800,
-        )
-        pdf_path = os.path.splitext(output_path)[0] + ".pdf"
-        if conversion.returncode != 0 or not os.path.exists(pdf_path):
-            raise HTTPException(
-                status_code=500,
-                detail=f"No se pudo convertir el documento a PDF: {conversion.stderr.strip()}",
+        rendered_pdf_paths = [os.path.splitext(path)[0] + ".pdf" for path in rendered_paths]
+        for index, (rendered_path, rendered_pdf_path) in enumerate(
+            zip(rendered_paths, rendered_pdf_paths)
+        ):
+            # Cada resolución se convierte en un proceso y perfil aislados.
+            # LibreOffice puede reutilizar estado de maquetación cuando recibe
+            # varios DOCX en una misma invocación y crear una tercera página.
+            profile_dir = os.path.join(batch_dir, f"libreoffice-profile-{index}")
+            os.makedirs(profile_dir, exist_ok=True)
+            conversion = subprocess.run(
+                [
+                    "libreoffice",
+                    "--headless",
+                    f"-env:UserInstallation=file://{os.path.abspath(profile_dir)}",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    batch_dir,
+                    rendered_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
+            if conversion.returncode != 0 or not os.path.exists(rendered_pdf_path):
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"No se pudo convertir la resolución "
+                        f"{rows[index][0].resolution_number} a PDF: "
+                        f"{conversion.stderr.strip()}"
+                    ),
+                )
+        pdf_path = os.path.join(
+            OUTPUT_DIR,
+            f"impresion_correspondencia_{request.resolution_from}_{request.resolution_to}_{stamp}.pdf",
+        )
+        writer = PdfWriter()
+        for rendered_pdf_path in rendered_pdf_paths:
+            writer.append(rendered_pdf_path)
+        with open(pdf_path, "wb") as pdf_file:
+            writer.write(pdf_file)
+        writer.close()
         return FileResponse(
             pdf_path,
             media_type="application/pdf",
             filename=os.path.basename(pdf_path),
             headers={"X-Document-Count": str(len(rows))},
         )
+    output_path = os.path.join(
+        OUTPUT_DIR,
+        f"impresion_correspondencia_{request.resolution_from}_{request.resolution_to}_{stamp}.docx",
+    )
+    DocumentGenerationService.combine_documents_per_resolution(rendered_paths, output_path)
     return FileResponse(
         output_path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

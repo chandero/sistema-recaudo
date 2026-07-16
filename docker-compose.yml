@@ -9,7 +9,7 @@ services:
       - ./backend:/app
       - /opt/riap/db:/opt/riap/db
     ports:
-      - "8001:8000"
+      - "8055:8000"  # Cambiado de 8001 a 8055
     environment:
       DB_PATH: /opt/riap/db/cartera.db
       USE_SQLITE: "True"
@@ -37,7 +37,7 @@ services:
       dockerfile: Dockerfile
     container_name: cartera_frontend
     ports:
-      - "5173:80"  # Volvemos a la configuración original
+      - "5055:80"  # Cambiado de 5173 a 5055
     depends_on:
       - backend
     networks:

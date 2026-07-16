@@ -1,3 +1,8 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from typing import Any
+
 import re
 
 def validate_password(password: str) -> bool:
@@ -5,28 +10,26 @@ def validate_password(password: str) -> bool:
     # Ejemplo: al menos 8 caracteres, una letra mayúscula, una letra minúscula y un número
     pattern = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$"
     return re.match(pattern, password) is not None
-from sqlalchemy.orm import Session
-from app.core.security import create_access_token
-from app.services.user_service import UserService
+
 
 def authenticate_user(db: Session, username: str, password: str):
     """Autentica un usuario con su nombre de usuario y contraseña"""
+    from app.services.user_service import UserService
     user_service = UserService(db)
     return user_service.authenticate_user(username, password)
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from typing import Any
 
-from app.core.database import get_db  # Corregido: era app.database
+
+from app.core.database import get_db
 from app.services.user_service import UserService
 from app.schemas.auth import Token, UserCreate, UserLogin, UserResponse
 from app.core.security import create_access_token
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_current_platform_admin
 from app.models.user import User
+from app.core.logging.logger import log_authentication_event, get_logger
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 def build_token_response(user) -> dict:
@@ -84,11 +87,29 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     try:
         user = authenticate_user(db, form_data.username, form_data.password)
         if not user or not user.is_active:
+            # Log failed authentication attempt
+            log_authentication_event(
+                event="LOGIN_FAILED",
+                username=form_data.username,
+                success=False,
+                ip_address="",  # Will be populated by middleware
+                user_agent=""  # Will be populated by middleware
+            )
+            
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Credenciales inválidas",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        
+        # Log successful authentication
+        log_authentication_event(
+            event="LOGIN_SUCCESS",
+            username=form_data.username,
+            success=True,
+            ip_address="",  # Will be populated by middleware
+            user_agent=""  # Will be populated by middleware
+        )
         
         return build_token_response(user)
     finally:
@@ -100,13 +121,66 @@ def login_json(credentials: UserLogin, db: Session = Depends(get_db)):
     """Endpoint JSON para autenticar desde el frontend."""
     user = authenticate_user(db, credentials.email, credentials.password)
     if not user or not user.is_active:
+        # Log failed authentication attempt
+        log_authentication_event(
+            event="LOGIN_FAILED",
+            username=credentials.email,
+            success=False,
+            ip_address="",  # Will be populated by middleware
+            user_agent=""  # Will be populated by middleware
+        )
+        
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Log successful authentication
+    log_authentication_event(
+        event="LOGIN_SUCCESS",
+        username=credentials.email,
+        success=True,
+        ip_address="",  # Will be populated by middleware
+        user_agent=""  # Will be populated by middleware
+    )
+
     return build_token_response(user)
+
+
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_active_user)):
+    """
+    Endpoint para cerrar la sesión del usuario actual.
+    """
+    try:
+        # Log the logout event
+        log_authentication_event(
+            event="LOGOUT",
+            username=current_user.email,  # Using email as username for consistency
+            success=True,
+            ip_address="",  # Will be populated by middleware
+            user_agent=""  # Will be populated by middleware
+        )
+        
+        logger.info(
+            module="auth",
+            action="user_logout",
+            message=f"Usuario {current_user.email} ha cerrado sesión",
+            user_id=current_user.id,
+            data={"user_email": current_user.email}
+        )
+        
+        return {"message": "Sesión cerrada exitosamente"}
+    except Exception as e:
+        logger.error(
+            module="auth",
+            action="logout_error",
+            message=f"Error durante el cierre de sesión: {str(e)}",
+            user_id=current_user.id if current_user else None,
+            error_code="LOGOUT_ERROR"
+        )
+        raise HTTPException(status_code=500, detail="Error al cerrar la sesión")
 
 
 @router.get("/me", response_model=UserResponse)

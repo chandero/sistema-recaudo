@@ -18,9 +18,17 @@
       </button>
       <div class="topbar-content">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="topbar-breadcrumb" />
-        <div class="user-info">
-          <i class="pi pi-user mr-2"></i>
-          <span>{{ currentUser?.username || 'Usuario' }}</span>
+        <div class="user-section">
+          <span class="user-name">{{ currentUser?.username || currentUser?.full_name || 'Usuario' }}</span>
+          <Avatar 
+            :label="getInitials(currentUser?.username || currentUser?.full_name || 'U')" 
+            class="user-avatar" 
+            size="large" 
+            shape="circle" 
+            @click="toggleUserMenu"
+            :pt="{ root: { class: 'cursor-pointer' } }"
+          />
+          <Menu ref="userMenuRef" :model="userMenuItems" :popup="true" />
         </div>
       </div>
     </div>
@@ -37,15 +45,21 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import Breadcrumb from 'primevue/breadcrumb';
+import Avatar from 'primevue/avatar';
+import Menu from 'primevue/menu';
 import { useAuthStore } from '@/stores/auth';
+import { useI18n } from '@/composables/useI18n';
 import AppMenu from './AppMenu.vue'; // Importar el componente AppMenu
 
 // Estados
 const mobileMenuActive = ref(false);
+const userMenuRef = ref();
 const authStore = useAuthStore();
 const route = useRoute();
+const router = useRouter();
+const { t } = useI18n();
 
 // Obtener el usuario actual
 const currentUser = computed(() => authStore.currentUser);
@@ -55,6 +69,65 @@ const home = ref({
   icon: 'pi pi-home',
   to: '/dashboard'
 });
+
+// Items del menú de usuario
+const userMenuItems = ref([
+  {
+    label: t('navigation.profile'),
+    icon: 'pi pi-user',
+    command: () => {
+      // Ir a la vista de perfil cuando esté implementada
+      console.log('Ir a perfil');
+    }
+  },
+  {
+    label: t('navigation.settings'),
+    icon: 'pi pi-cog',
+    command: () => {
+      // Ir a la vista de configuración cuando esté implementada
+      console.log('Ir a configuración');
+    }
+  },
+  {
+    separator: true
+  },
+  {
+    label: t('navigation.logout'),
+    icon: 'pi pi-sign-out',
+    command: () => {
+      handleLogout();
+    }
+  }
+]);
+
+// Función para obtener iniciales del nombre
+const getInitials = (name) => {
+  if (!name) return 'U';
+  return name
+    .split(' ')
+    .map(n => n.charAt(0))
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+};
+
+// Función para alternar el menú de usuario
+const toggleUserMenu = (event) => {
+  userMenuRef.value.toggle(event);
+};
+
+// Función para manejar el cierre de sesión
+const handleLogout = async () => {
+  try {
+    await authStore.logout(); // Llama al logout del store que también llama al backend
+    router.push('/login');
+  } catch (error) {
+    console.error('Error during logout:', error);
+    // Asegurar que se limpie la sesión incluso si hay un error
+    authStore.logout();
+    router.push('/login');
+  }
+};
 
 // Items del breadcrumb basados en la ruta actual
 const breadcrumbItems = computed(() => {
@@ -98,6 +171,7 @@ const handleResize = () => {
 
 onMounted(() => {
   window.addEventListener('resize', handleResize);
+  handleResize(); // Ejecutar una vez para establecer el estado inicial
   handleResize(); // Ejecutar una vez para establecer el estado inicial
 });
 
@@ -221,10 +295,21 @@ const currentPageTitle = ref('Dashboard'); // Valor por defecto
   flex: 1;
 }
 
-.user-info {
+.user-section {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+.user-name {
   font-weight: 500;
+  color: #495057;
+  margin-right: 8px;
+  display: none; /* Ocultar en pantallas pequeñas para ahorrar espacio */
+}
+
+.user-avatar {
+  cursor: pointer;
 }
 
 .layout-content {
@@ -278,6 +363,10 @@ const currentPageTitle = ref('Dashboard'); // Valor por defecto
 
   .menu-button {
     display: block;
+  }
+
+  .user-name {
+    display: inline-block; /* Mostrar en móviles si hay espacio suficiente */
   }
 
   .layout-mobile-active .layout-sidebar {

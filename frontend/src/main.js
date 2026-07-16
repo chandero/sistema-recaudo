@@ -31,6 +31,8 @@ import Toolbar from 'primevue/toolbar';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
 import Checkbox from 'primevue/checkbox';
+import Avatar from 'primevue/avatar';
+import Menu from 'primevue/menu';
 
 import App from './App.vue';
 import router from './router';
@@ -88,6 +90,8 @@ app.component('Toolbar', Toolbar);
 app.component('IconField', IconField);
 app.component('InputIcon', InputIcon);
 app.component('Checkbox', Checkbox);
+app.component('Avatar', Avatar);
+app.component('Menu', Menu);
 
 // Manejador global de errores
 app.config.errorHandler = (err, instance, info) => {
@@ -99,12 +103,8 @@ app.config.errorHandler = (err, instance, info) => {
         const authStore = useAuthStore();
         // Aquí podrías agregar lógica para mostrar el error al usuario
         // por ejemplo, mostrando un toast o guardando el error para mostrarlo
-        if (authStore.currentUser) {
-            // Solo mostrar errores si hay un usuario autenticado
-            console.error(`Error en componente: ${instance?.$options.name || 'desconocido'}, Info: ${info}`);
-        }
-    } catch (storeErr) {
-        console.error('Error accediendo a la store:', storeErr);
+    } catch (e) {
+        console.error('Error accediendo a authStore:', e);
     }
 };
 

@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Dict, List, Any
 from docxtpl import DocxTemplate
 from docx import Document as DocxDocument
+from docx.shared import Pt
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from copy import deepcopy
 import pandas as pd
 from io import BytesIO
 import zipfile
@@ -38,11 +42,120 @@ class DocumentGenerationService:
             
             # Renderizar la plantilla con los datos
             doc.render(data)
+
+            # La plantilla de resoluciones incluye un párrafo vacío justo
+            # antes de "Proyecto:". LibreOffice le asigna altura de línea y
+            # desplaza la última firma a una tercera página. Se elimina solo
+            # cuando está realmente vacío y no contiene imágenes.
+            paragraphs = doc.docx.paragraphs
+            for index, paragraph in enumerate(paragraphs):
+                if paragraph.text.strip().casefold() != "proyecto:":
+                    continue
+                previous = paragraph._p.getprevious()
+                if (
+                    previous is not None
+                    and not "".join(previous.itertext()).strip()
+                    and not previous.findall(f".//{qn('w:drawing')}")
+                ):
+                    previous.getparent().remove(previous)
+                # El párrafo anterior ancla la imagen de la firma. No contiene
+                # texto, pero LibreOffice en producción le reserva una línea
+                # completa adicional. La imagen es flotante, por lo que esa
+                # altura puede reducirse sin cambiar su tamaño ni posición.
+                anchor_element = paragraph._p.getprevious()
+                if (
+                    anchor_element is not None
+                    and anchor_element.findall(f".//{qn('w:drawing')}")
+                ):
+                    anchor_paragraph = next(
+                        (
+                            candidate
+                            for candidate in paragraphs
+                            if candidate._p is anchor_element
+                        ),
+                        None,
+                    )
+                    if anchor_paragraph is not None:
+                        anchor_paragraph.paragraph_format.space_before = Pt(0)
+                        anchor_paragraph.paragraph_format.space_after = Pt(0)
+                        anchor_paragraph.paragraph_format.line_spacing = Pt(1)
+                # Compactar exclusivamente las tres líneas finales de firma.
+                # Los datos variables extensos pueden consumir unos puntos más
+                # en la segunda página y desplazar la última línea a una tercera.
+                for signature_paragraph in paragraphs[index:index + 3]:
+                    signature_paragraph.paragraph_format.space_before = Pt(0)
+                    signature_paragraph.paragraph_format.space_after = Pt(0)
+                    signature_paragraph.paragraph_format.line_spacing = 1.0
+                break
             
             # Guardar el documento generado
             doc.save(output_path)
         except Exception as e:
             raise Exception(f"Error al renderizar la plantilla: {str(e)}")
+
+    @staticmethod
+    def _restart_section_page_numbering(section_properties):
+        """Hace que la numeración de una sección comience nuevamente en 1."""
+        page_number_type = section_properties.find(qn("w:pgNumType"))
+        if page_number_type is None:
+            page_number_type = OxmlElement("w:pgNumType")
+            section_properties.append(page_number_type)
+        page_number_type.set(qn("w:start"), "1")
+
+    @staticmethod
+    def combine_documents_per_resolution(document_paths: List[str], output_path: str):
+        """Une documentos, creando una sección numerada desde 1 para cada uno.
+
+        El contenido siempre se inserta antes del ``sectPr`` final. Agregarlo al
+        final del body produce un DOCX fuera del orden definido por WordprocessingML
+        y LibreOffice puede interpretar ese XML como páginas vacías.
+        """
+        if not document_paths:
+            raise ValueError("Se requiere al menos un documento para combinar")
+
+        master = DocxDocument(document_paths[0])
+        body = master.element.body
+        for element in list(body):
+            body.remove(element)
+
+        for index, path in enumerate(document_paths):
+            source = DocxDocument(path)
+            copied_elements = []
+            for element in source.element.body:
+                if not element.tag.endswith("}sectPr"):
+                    copied_element = deepcopy(element)
+                    body.append(copied_element)
+                    copied_elements.append(copied_element)
+
+            section_properties = deepcopy(source.element.body.sectPr)
+            DocumentGenerationService._restart_section_page_numbering(section_properties)
+            if index < len(document_paths) - 1:
+                section_type = section_properties.find(qn("w:type"))
+                if section_type is None:
+                    section_type = OxmlElement("w:type")
+                    section_properties.insert(0, section_type)
+                section_type.set(qn("w:val"), "nextPage")
+
+                paragraph = next(
+                    (
+                        element
+                        for element in reversed(copied_elements)
+                        if element.tag == qn("w:p")
+                    ),
+                    None,
+                )
+                if paragraph is None:
+                    paragraph = OxmlElement("w:p")
+                    body.append(paragraph)
+                paragraph_properties = paragraph.find(qn("w:pPr"))
+                if paragraph_properties is None:
+                    paragraph_properties = OxmlElement("w:pPr")
+                    paragraph.insert(0, paragraph_properties)
+                paragraph_properties.append(section_properties)
+            else:
+                body.append(section_properties)
+
+        master.save(output_path)
 
     @staticmethod
     def convert_to_pdf(docx_path: str, pdf_path: str):
