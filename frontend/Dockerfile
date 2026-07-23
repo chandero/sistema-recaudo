@@ -9,9 +9,7 @@ RUN npm install
 # Copy source files
 COPY . .
 
-# Replace dev index.html with production template
-COPY index.prod.html index.html
-
+# Production build
 RUN npm run build
 
 # Production stage

@@ -236,6 +236,50 @@
             </small>
           </div>
 
+          <!-- Exportar a Excel por rango de resoluciones -->
+          <div class="resolution-data mb-4">
+            <h4 class="mt-0 mb-3 flex align-items-center gap-2">
+              <i class="pi pi-table text-green-600"></i>
+              Exportar obligaciones a Excel por rango
+            </h4>
+            <div class="grid gap-3 align-items-end">
+              <div class="col-12 md:col-3">
+                <label class="font-semibold block mb-2" for="excel-resolution-from">Resolución desde</label>
+                <InputNumber
+                  id="excel-resolution-from"
+                  v-model="excelRange.from"
+                  :useGrouping="false"
+                  :min="1"
+                  class="w-full"
+                />
+              </div>
+              <div class="col-12 md:col-3">
+                <label class="font-semibold block mb-2" for="excel-resolution-to">Resolución hasta</label>
+                <InputNumber
+                  id="excel-resolution-to"
+                  v-model="excelRange.to"
+                  :useGrouping="false"
+                  :min="1"
+                  class="w-full"
+                />
+              </div>
+              <div class="col-12 md:col-6 flex gap-2">
+                <Button
+                  label="Exportar a Excel"
+                  icon="pi pi-file-excel"
+                  severity="success"
+                  class="w-full"
+                  @click="exportarExcelPorRango"
+                  :loading="exportandoExcel"
+                  :disabled="!excelRange.from || !excelRange.to"
+                />
+              </div>
+            </div>
+            <small class="text-gray-500">
+              Exporta las obligaciones en el rango de resoluciones a un archivo Excel con el formato solicitado.
+            </small>
+          </div>
+
           <!-- Filtros -->
           <div class="flex flex-wrap gap-3 mb-4">
             <Dropdown 
@@ -516,12 +560,14 @@ const loading = ref(false);
 const asignando = ref(false);
 const generandoCorrespondencia = ref(false);
 const generandoImpresion = ref(false);
+const exportandoExcel = ref(false);
 const procesos = ref([]);
 const procesosFiltrados = ref([]);
 const procesosSeleccionados = ref([]);
 const estadosDisponibles = ref([]);
 const filtroEstado = ref(null);
 const printRange = ref({ from: null, to: null });
+const excelRange = ref({ from: null, to: null });
 
 // Configuración
 const config = ref({
@@ -769,6 +815,58 @@ const generarImpresionPorRango = async (format = 'docx') => {
     toast.add({ severity: 'error', summary: 'Error', detail, life: 6000 });
   } finally {
     generandoImpresion.value = false;
+  }
+};
+
+const exportarExcelPorRango = async () => {
+  if (excelRange.value.from > excelRange.value.to) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Rango inválido',
+      detail: 'La resolución inicial no puede superar la resolución final',
+      life: 5000
+    });
+    return;
+  }
+
+  exportandoExcel.value = true;
+  try {
+    const response = await api.get('/documents/export/excel', {
+      params: {
+        resolution_from: excelRange.value.from,
+        resolution_to: excelRange.value.to
+      },
+      responseType: 'blob'
+    });
+    
+    const blobUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `obligaciones_resoluciones_${excelRange.value.from}_${excelRange.value.to}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
+    
+    toast.add({
+      severity: 'success',
+      summary: 'Éxito',
+      detail: 'Archivo Excel descargado correctamente',
+      life: 5000
+    });
+  } catch (error) {
+    let detail = 'No se pudo generar el archivo Excel';
+    if (error.response?.data instanceof Blob) {
+      try {
+        const errorBody = JSON.parse(await error.response.data.text());
+        detail = errorBody.detail || detail;
+      } catch (_) {
+        // Mantener mensaje genérico si la respuesta no es JSON.
+      }
+    }
+    toast.add({ severity: 'error', summary: 'Error', detail, life: 6000 });
+  } finally {
+    exportandoExcel.value = false;
   }
 };
 

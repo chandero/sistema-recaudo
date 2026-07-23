@@ -13,8 +13,8 @@ import subprocess
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body, Query
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from num2words import num2words
@@ -271,6 +271,61 @@ def generate_certified_correspondence_batch(
         filename=os.path.basename(zip_path),
         headers={"X-Document-Count": str(len(rows))},
     )
+
+
+@router.get("/export/excel")
+def export_obligations_by_resolution_range(
+    resolution_from: int = Query(..., description="Número inicial de resolución"),
+    resolution_to: int = Query(..., description="Número final de resolución"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Exporta obligaciones en un rango de resoluciones a un archivo Excel con formato."""
+    try:
+        # Validar parámetros
+        if resolution_from > resolution_to:
+            raise HTTPException(
+                status_code=400, 
+                detail="El número de resolución inicial no puede ser mayor al final"
+            )
+        
+        # Validar que el rango no sea excesivamente grande
+        if resolution_to - resolution_from > 10000:
+            raise HTTPException(
+                status_code=400, 
+                detail="El rango de resoluciones es demasiado grande. Máximo permitido: 10,000"
+            )
+        
+        # Importar el servicio acá para evitar problemas de importación circular
+        from app.services.excel_export_service import ExcelExportService
+        
+        # Generar archivo Excel
+        excel_file = ExcelExportService.export_obligations_by_resolution_range(
+            db=session,
+            resolution_from=resolution_from,
+            resolution_to=resolution_to
+        )
+        
+        # Crear nombre de archivo
+        filename = f"obligaciones_resoluciones_{resolution_from}_{resolution_to}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        # Devolver archivo como respuesta
+        excel_content = excel_file.getvalue()
+        headers = {
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        }
+        return StreamingResponse(
+            iter([excel_content]),
+            headers=headers
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error generando reporte Excel: {str(e)}"
+        )
 
 
 @router.get("/templates", response_model=List[DocumentTemplateResponse])
