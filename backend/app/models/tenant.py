@@ -17,6 +17,9 @@ class TenantBase(SQLModel):
     name: str = Field(..., min_length=1, max_length=200)
     code: str = Field(..., min_length=1, max_length=50, unique=True, index=True)
     is_active: bool = Field(default=True)
+    address: Optional[str] = Field(default=None, max_length=500)
+    city: Optional[str] = Field(default=None, max_length=100)
+    department: Optional[str] = Field(default=None, max_length=100)
 
 
 class Tenant(TenantBase, table=True):
