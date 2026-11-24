@@ -29,9 +29,11 @@ from app.models.workflow import WorkflowState, WorkflowStateCode
 from app.services.email_service import EmailService
 
 
-def _crear_plantilla_docx() -> bytes:
+def _crear_plantilla_docx(marca: str = "") -> bytes:
     """Plantilla mínima con todos los placeholders de los dos documentos."""
     documento = Document()
+    if marca:
+        documento.add_paragraph(marca)
     documento.add_paragraph(
         "Resolución {{numero_resolucion}} de {{fecha_resolucion}}, "
         "pago {{fecha_pago}}, cuenta {{cuenta_usuario}}"
@@ -749,4 +751,145 @@ def test_plantillas_oficiales_renderizan_sin_tags_colgados(nombre):
 
     assert "{{" not in texto
     assert "}}" not in texto
+    assert "3849" in texto
+
+
+# ─────────────────────────────────────────────────────────────
+# Reemplazo del DOCX de una plantilla registrada
+# ─────────────────────────────────────────────────────────────
+
+def _subir_plantilla(cliente_api, code: str, contenido: bytes, nombre: str = "nueva.docx"):
+    return cliente_api.put(
+        f"/documents/templates/{code}/content",
+        files={
+            "file": (
+                nombre,
+                io.BytesIO(contenido),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+
+def _docx_plano(texto: str) -> bytes:
+    documento = Document()
+    documento.add_paragraph(texto)
+    memoria = io.BytesIO()
+    documento.save(memoria)
+    return memoria.getvalue()
+
+
+def test_reemplazo_actualiza_binario_version_y_espejo(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    session = contexto["session"]
+    plantilla = session.exec(
+        select(DocumentTemplate).where(DocumentTemplate.code == "AUTO_ARCHIVO")
+    ).first()
+    version_anterior = plantilla.version
+    nuevo = _crear_plantilla_docx(marca="FORMATO 2026")
+
+    respuesta = _subir_plantilla(contexto["client"], "AUTO_ARCHIVO", nuevo)
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["version"] == version_anterior + 1
+    assert respuesta.headers["X-Template-Version"] == str(version_anterior + 1)
+    session.refresh(plantilla)
+    assert plantilla.content == nuevo
+    assert "fecha_pago" in plantilla.variables_schema["variables"]
+    assert plantilla.variables_schema["desconocidas"] == []
+    assert (tmp_path / "1_auto_de_archivo.docx").read_bytes() == nuevo
+
+
+def test_reemplazo_rechaza_un_docx_sin_variables(contexto, tmp_path, monkeypatch):
+    """Un formato con datos impresos no puede registrarse: imprimiría igual para todos."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+
+    respuesta = _subir_plantilla(
+        contexto["client"], "AUTO_ARCHIVO", _docx_plano("Resolución N. 3849 de MARLENY BARRERA")
+    )
+
+    assert respuesta.status_code == 400
+    assert "no contiene variables" in respuesta.json()["detail"]
+    assert not (tmp_path / "1_auto_de_archivo.docx").exists()
+
+
+def test_reemplazo_rechaza_variables_requeridas_faltantes(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+
+    respuesta = _subir_plantilla(
+        contexto["client"], "AUTO_ARCHIVO", _docx_plano("Solo {{nombre_usuario}} y {{fecha_pago}}")
+    )
+
+    assert respuesta.status_code == 400
+    detail = respuesta.json()["detail"]
+    assert "faltan variables requeridas" in detail
+    assert "numero_resolucion" in detail
+    assert "fecha_pago" not in detail.split(":", 1)[1]
+
+
+def test_reemplazo_rechaza_extension_no_permitida(contexto):
+    respuesta = contexto["client"].put(
+        "/documents/templates/AUTO_ARCHIVO/content",
+        files={"file": ("formato.txt", io.BytesIO(b"texto plano"), "text/plain")},
+    )
+
+    assert respuesta.status_code == 400
+    assert "Tipo de archivo no permitido" in respuesta.json()["detail"]
+
+
+def test_reemplazo_exige_codigo_existente_del_tenant(contexto):
+    respuesta = _subir_plantilla(
+        contexto["client"], "SIN_REGISTRO", _crear_plantilla_docx()
+    )
+
+    assert respuesta.status_code == 404
+    assert "SIN_REGISTRO" in respuesta.json()["detail"]
+
+
+def test_reemplazo_no_toca_la_plantilla_de_otro_tenant(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    session = contexto["session"]
+    ajena = DocumentTemplate(
+        tenant_id=contexto["otro_tenant"].id,
+        code="AUTO_ARCHIVO",
+        name="Auto de Archivo ajeno",
+        template_type=TemplateType.DOCX,
+        is_active=True,
+        content=_crear_plantilla_docx(marca="ORIGINAL AJENO"),
+    )
+    session.add(ajena)
+    session.commit()
+    session.refresh(ajena)
+    contenido_ajeno = ajena.content
+
+    respuesta = _subir_plantilla(
+        contexto["client"], "AUTO_ARCHIVO", _crear_plantilla_docx(marca="NUEVO PROPIO")
+    )
+
+    assert respuesta.status_code == 200
+    session.refresh(ajena)
+    assert ajena.content == contenido_ajeno
+    assert ajena.version == 1
+
+
+def test_la_generacion_usa_el_binario_reemplazado(contexto, tmp_path, monkeypatch):
+    """La generación lee el BLOB de la base de datos, no el archivo en disco."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    assert _subir_plantilla(
+        contexto["client"], "AUTO_ARCHIVO", _crear_plantilla_docx(marca="FORMATO-NUEVO-2026")
+    ).status_code == 200
+
+    respuesta = contexto["client"].post(
+        "/documents/auto-archivo/generate",
+        json={"obligation_ids": [contexto["obligacion"].id], "formato": "docx"},
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    archivos = _lista_zip(respuesta.content)
+    with zipfile.ZipFile(io.BytesIO(respuesta.content)) as zip_file:
+        texto = "".join(
+            paragraph.text
+            for paragraph in Document(io.BytesIO(zip_file.read(archivos[0]))).paragraphs
+        )
+    assert "FORMATO-NUEVO-2026" in texto
     assert "3849" in texto

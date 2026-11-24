@@ -38,6 +38,9 @@ app.add_middleware(
         "X-File-Count",
         "X-Email-Sent",
         "X-Email-Failed",
+        # Aviso del reemplazo de plantilla cuando no se pudo escribir el archivo
+        # espejo en disco (la copia en base de datos sí quedó aplicada).
+        "X-Template-Warning",
     ],
 )
 

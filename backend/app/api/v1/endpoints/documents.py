@@ -14,7 +14,7 @@ from datetime import datetime, date
 from html import escape
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session, select, desc
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ from app.core.database import get_session
 from app.core.dependencies import get_current_active_user
 from app.core.logging.logger import get_logger
 from app.models.user import User
-from app.models.document import DocumentTemplate, GeneratedDocument
+from app.models.document import DocumentTemplate, GeneratedDocument, TemplateType
 from app.schemas.document import (
     DocumentTemplateCreate, 
     DocumentTemplateResponse, 
@@ -40,6 +40,7 @@ from app.models.obligation import Obligation
 from app.models.workflow import WorkflowState, WorkflowStateCode
 from app.services.document_generation_service import DocumentGenerationService
 from app.services.email_service import EmailService
+from app.services.template_utils import construir_schema, validar_plantilla
 
 router = APIRouter()
 
@@ -47,6 +48,15 @@ logger = get_logger(__name__)
 
 UPLOAD_DIR = "app/uploads/templates"
 OUTPUT_DIR = "app/uploads/generated"
+
+# Archivo espejo en el repositorio de cada plantilla oficial: al reemplazar por
+# API se sobrescribe también, para que `scripts/registrar_plantillas.py` no
+# revierta el binario la próxima vez que se ejecute.
+ARCHIVOS_ESPEJO = {
+    "AUTO_ARCHIVO": "1_auto_de_archivo.docx",
+    "CONSTANCIA_SECRETARIAL": "1_constancia_secretarial.docx",
+}
+MAX_PLANTILLA_BYTES = 10 * 1024 * 1024
 
 # Asegurar directorios
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -958,6 +968,121 @@ def create_template(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creando plantilla: {str(e)}")
+
+
+@router.put("/templates/{code}/content", response_model=DocumentTemplateResponse)
+def reemplazar_contenido_plantilla(
+    code: str,
+    response: Response,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Reemplaza el DOCX de una plantilla ya registrada por su código.
+
+    La generación lee el binario guardado en la base de datos, así que el cambio
+    surte efecto en la siguiente petición sin reiniciar el servicio. Se valida
+    que el archivo traiga las variables que el generador sabe resolver: si no,
+    se rechazaría en lugar de producir documentos con datos estáticos.
+    """
+    extension = os.path.splitext(file.filename or "")[1].lower()
+    if extension not in (".docx", ".dotx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Tipo de archivo no permitido. Solo se permiten: .docx, .dotx",
+        )
+
+    contenido = file.file.read(MAX_PLANTILLA_BYTES + 1)
+    if not contenido:
+        raise HTTPException(status_code=400, detail="El archivo subido está vacío")
+    if len(contenido) > MAX_PLANTILLA_BYTES:
+        raise HTTPException(status_code=400, detail="La plantilla supera el máximo de 10 MB")
+
+    try:
+        variables = validar_plantilla(contenido, code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    try:
+        plantilla = session.exec(
+            select(DocumentTemplate).where(
+                DocumentTemplate.tenant_id == current_user.tenant_id,
+                DocumentTemplate.code == code,
+            )
+        ).first()
+        if not plantilla:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No existe una plantilla con código {code} para este tenant",
+            )
+
+        espejo = ARCHIVOS_ESPEJO.get(code) or (
+            f"{current_user.tenant_id}_{_safe_filename(os.path.basename(file.filename or 'plantilla.docx'))}"
+        )
+        ruta_espejo = os.path.join(UPLOAD_DIR, espejo)
+        aviso = ""
+        try:
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            with open(ruta_espejo, "wb") as buffer:
+                buffer.write(contenido)
+        except OSError as exc:
+            # La generación usa el binario de la base de datos: quedarse sin
+            # archivo en disco no invalida el reemplazo, solo hay que informarlo.
+            ruta_espejo = ""
+            aviso = "no se pudo actualizar el archivo en disco"
+            logger.warning(
+                module="document_generation",
+                action="template_mirror_failed",
+                message=f"Fallo al escribir el archivo espejo de {code}: {exc}",
+                user_id=current_user.id,
+            )
+
+        version_anterior = plantilla.version or 1
+        plantilla.content = contenido
+        plantilla.template_type = TemplateType.DOCX
+        plantilla.version = version_anterior + 1
+        plantilla.variables_schema = construir_schema(
+            variables, os.path.basename(file.filename or espejo)
+        )
+        plantilla.updated_at = datetime.utcnow()
+        session.add(plantilla)
+        session.commit()
+        session.refresh(plantilla)
+
+        desconocidas = plantilla.variables_schema.get("desconocidas", [])
+        response.headers["X-Template-Version"] = str(plantilla.version)
+        response.headers["X-Template-Variables"] = ",".join(variables)
+        response.headers["X-Template-Unknown"] = ",".join(desconocidas)
+        response.headers["X-Template-Mirror"] = ruta_espejo
+        if aviso:
+            response.headers["X-Template-Warning"] = aviso
+
+        logger.info(
+            module="document_generation",
+            action="template_replaced",
+            message=f"Plantilla {code} reemplazada v{version_anterior} -> v{plantilla.version}",
+            user_id=current_user.id,
+            data={
+                "tenant_id": current_user.tenant_id,
+                "code": code,
+                "variables": variables,
+                "desconocidas": desconocidas,
+                "bytes": len(contenido),
+                "espejo": ruta_espejo,
+            },
+        )
+        return plantilla
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        logger.error(
+            module="document_generation",
+            action="template_replace_failed",
+            message=f"Error reemplazando la plantilla {code}: {e}",
+            user_id=current_user.id,
+        )
+        raise HTTPException(status_code=500, detail=f"Error reemplazando la plantilla: {str(e)}")
 
 
 @router.get("/generated", response_model=List[GeneratedDocumentResponse])

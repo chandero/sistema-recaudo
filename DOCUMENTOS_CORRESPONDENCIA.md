@@ -16,6 +16,7 @@ correo del cliente con los documentos adjuntos.
 | POST | `/api/v1/documents/constancia/preview` | `{obligation_ids}` |
 | POST | `/api/v1/documents/auto-archivo/generate` | ver abajo |
 | POST | `/api/v1/documents/constancia/generate` | ver abajo |
+| PUT | `/api/v1/documents/templates/{code}/content` | multipart `file` (DOCX) |
 
 Cuerpo de `generate`:
 
@@ -76,6 +77,43 @@ python3 scripts/convierte_plantillas.py ../plantillas_nuevas
 
 El script verifica el número exacto de apariciones de cada valor; si la
 plantilla oficial cambia, falla en vez de generar un documento a medias.
+
+### Reemplazar una plantilla existente
+
+La generación siempre lee el binario guardado en `document_templates.content`, no
+el archivo de disco: el cambio surte efecto en la petición siguiente, sin
+reiniciar el servicio.
+
+**Desde la interfaz** — Documentos → pestaña *Plantillas* → botón *Reemplazar* de
+la fila. Llama a `PUT /api/v1/documents/templates/{code}/content` (multipart,
+`file`) y devuelve la plantilla con su nueva `version` y el `variables_schema`
+recalculado. Rechaza con 400 cuando:
+
+- la extensión no es `.docx`/`.dotx`, el archivo está vacío o pasa de 10 MB;
+- el DOCX no tiene variables `{{...}}`: imprimiría lo mismo para todos los casos
+  y conservaría los datos del archivo original (error típico al subir el formato
+  oficial ya diligenciado);
+- falta alguna variable obligatoria del código, según
+  `VARIABLES_OBLIGATORIAS` en `backend/app/services/template_utils.py`.
+
+Las variables no reconocidas no bloquean: se guardan en
+`variables_schema.desconocidas` y la interfaz las muestra como advertencia
+(docxtpl las resuelve vacías).
+
+El reemplazo también sobrescribe el archivo espejo de la plantilla
+(`1_auto_de_archivo.docx` / `1_constancia_secretarial.docx`) para que
+`registrar_plantillas.py` no revierta el binario la próxima vez que se ejecute.
+Si esa escritura en disco falla, la plantilla queda aplicada igualmente en la
+base de datos y se avisa con la cabecera `X-Template-Warning`.
+
+**Por consola** — sustituir el archivo en `backend/app/uploads/templates/` con el
+mismo nombre y ejecutar `python scripts/registrar_plantillas.py`: compara bytes,
+informa `IGUAL` si no cambió y `ACTUALIZA` (subiendo `version`) si cambió.
+
+Si el cambio de formato agrega un dato variable nuevo, hay que declararlo en
+`_contexto_documento` y en `ETIQUETAS_PLACEHOLDER`. Si solo cambia el diseño
+(logos, firmas, texto normativo), basta con subir el DOCX con las mismas
+variables.
 
 ## Columnas nuevas
 
@@ -142,6 +180,9 @@ para la impresión por rango del acto administrativo).
 
 - No se generan automáticamente al cambiar el estado a pagado: la orden fue
   generación manual.
+- El reemplazo de plantilla usa el mismo permiso que la subida
+  (`get_current_active_user`), es decir cualquier usuario activo del tenant; la
+  ruta está pensada para el funcionario que mantiene los formatos.
 - Los códigos `AUTO_ARCHIVO` y `CONSTANCIA_SECRETARIAL` son distintos de
   `GD-F.03` para no chocar con el glob `{tenant}_*GD-F.03*` del endpoint
   genérico de plantillas.

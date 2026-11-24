@@ -15,9 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import sys
-import zipfile
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,23 +25,10 @@ from sqlmodel import Session, select  # noqa: E402
 from app.core.database import engine  # noqa: E402
 from app.models.document import DocumentTemplate, TemplateType  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
+from app.services.template_utils import construir_schema, extraer_placeholders  # noqa: E402
 
 # Mismo destino que UPLOAD_DIR en app/api/v1/endpoints/documents.py.
 PLANTILLA_DIR = os.path.join("app", "uploads", "templates")
-
-# Campos que el formulario del frontend debe ofrecer por tipo de documento.
-_ETIQUETAS = {
-    "numero_resolucion": "Número de resolución",
-    "fecha_resolucion": "Fecha de resolución (AAAA-MM-DD)",
-    "fecha_resolucion_larga": "Fecha de resolución en letras",
-    "fecha_constancia": "Fecha de la constancia en letras",
-    "fecha_pago": "Fecha de pago total (AAAA-MM-DD)",
-    "fecha_ejecutoria_larga": "Fecha de ejecutoria en letras",
-    "nombre_usuario": "Nombre del contribuyente",
-    "documento_usuario": "Identificación del contribuyente",
-    "direccion_usuario": "Dirección del contribuyente",
-    "cuenta_usuario": "Cuenta / referencia de la obligación",
-}
 
 PLANES = [
     {
@@ -66,32 +51,14 @@ PLANES = [
     },
 ]
 
-_TAG = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
-
-
 def _variables(docx_path: str) -> dict:
     """Extrae los placeholders reales del DOCX para el variables_schema."""
-    texto = ""
-    with zipfile.ZipFile(docx_path) as archivo:
-        for nombre in archivo.namelist():
-            if re.match(r"word/(document|header\d*|footer\d*)\.xml$", nombre):
-                # Se quitan las etiquetas XML antes de buscar: Word suele partir
-                # '{{campo}}' en varios runs y el placeholder solo se ve al
-                # concatenar el texto de los runs contiguos.
-                texto += re.sub(r"<[^>]+>", "", archivo.read(nombre).decode("utf-8", "ignore"))
-    encontrados = []
-    for valor in _TAG.findall(texto):
-        if valor not in encontrados:
-            encontrados.append(valor)
-    validos = [v for v in encontrados if v in _ETIQUETAS]
-    descartados = [v for v in encontrados if v not in _ETIQUETAS]
-    if descartados:
-        print(f"[ADVERTENCIA] {os.path.basename(docx_path)} tiene variables desconocidas: {descartados}")
-    return {
-        "variables": validos,
-        "etiquetas": {v: _ETIQUETAS[v] for v in validos},
-        "fuente": os.path.basename(docx_path),
-    }
+    with open(docx_path, "rb") as archivo:
+        placeholders = extraer_placeholders(archivo.read())
+    schema = construir_schema(placeholders, os.path.basename(docx_path))
+    if schema["desconocidas"]:
+        print(f"[ADVERTENCIA] {os.path.basename(docx_path)} tiene variables desconocidas: {schema['desconocidas']}")
+    return schema
 
 
 def _registros(session: Session, tenant_id: int) -> int:

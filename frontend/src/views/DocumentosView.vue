@@ -180,6 +180,14 @@
                   class="mr-1"
                 />
                 <Button 
+                  icon="pi pi-upload" 
+                  text 
+                  severity="warning" 
+                  @click="openReemplazoTemplate(slotProps.data)"
+                  v-tooltip="'Reemplazar el DOCX (sube la versión)'"
+                  class="mr-1"
+                />
+                <Button 
                   icon="pi pi-trash" 
                   text 
                   severity="danger" 
@@ -609,6 +617,58 @@
       </template>
     </Dialog>
 
+    <!-- Dialog for replacing the DOCX of an existing template -->
+    <Dialog 
+      v-model:visible="templateReemplazoDialog" 
+      :style="{ width: '560px' }" 
+      :header="templateReemplazo ? 'Reemplazar DOCX: ' + templateReemplazo.name : 'Reemplazar DOCX'" 
+      :modal="true" 
+      class="p-fluid"
+    >
+      <div class="field">
+        <label for="reemplazoCodigo">Código de la plantilla</label>
+        <InputText id="reemplazoCodigo" :value="templateReemplazo ? templateReemplazo.code : ''" readonly />
+      </div>
+      <div class="field">
+        <label for="reemplazoArchivo">Nuevo archivo DOCX con las variables entre llaves</label>
+        <FileUpload 
+          id="reemplazoArchivo"
+          name="reemplazoArchivo"
+          :multiple="false" 
+          accept=".docx,.dotx" 
+          customUpload 
+          :maxFileSize="10000000"
+          @uploader="onReemplazoFileSelect"
+        >
+          <template #empty>
+            <p>Arrastre el DOCX o selecciónelo desde su equipo.</p>
+          </template>
+        </FileUpload>
+        <small v-if="reemplazoArchivo">Archivo elegido: {{ reemplazoArchivo.name }}</small>
+      </div>
+      <Message v-if="templateReemplazo && templateReemplazo.variables && templateReemplazo.variables.length" severity="secondary" :closable="false">
+        El archivo debe conservar: {{ templateReemplazo.variables.join(', ') }}
+      </Message>
+      <Message v-else severity="warn" :closable="false">
+        Este código no tiene variables registradas: el DOCX debe incluir al menos una para que la generación reemplace los datos del caso.
+      </Message>
+      <template #footer>
+        <Button 
+          label="Cancelar" 
+          icon="pi pi-times" 
+          text 
+          @click="cerrarReemplazo"
+        />
+        <Button 
+          label="Reemplazar" 
+          icon="pi pi-upload" 
+          :loading="reemplazando"
+          :disabled="!reemplazoArchivo"
+          @click="confirmarReemplazoPlantilla"
+        />
+      </template>
+    </Dialog>
+
     <!-- Document Generator Dialog -->
     <DocumentGenerator 
       v-model:visible="showDocumentGenerator" 
@@ -616,6 +676,8 @@
       :obligation="selectedObligationForGen"
       @document-generated="onDocumentGenerated"
     />
+
+    <Toast position="top-right" />
     
   </div>
 </template>
@@ -626,6 +688,7 @@ import PageHeader from '@/components/PageHeader.vue';
 import DataTableWrapper from '@/components/DataTableWrapper.vue';
 import DocumentGenerator from '@/components/DocumentGenerator.vue';
 import { FilterMatchMode } from 'primevue/api';
+import { useToast } from 'primevue/usetoast';
 import { documentService } from '@/services/api'; // Corregir import
 
 // Importar componentes adicionales
@@ -637,6 +700,8 @@ import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
 import Divider from 'primevue/divider';
 
+const toast = useToast();
+
 // Variables para manejo de archivos
 const selectedTemplateFile = ref(null);
 const selectedTemplateName = ref('');
@@ -645,6 +710,12 @@ const templateSearchValue = ref('');
 // Variables para vista previa de plantillas
 const templatePreviewDialog = ref(false);
 const selectedTemplateForPreview = ref(null);
+
+// Variables para reemplazar el DOCX de una plantilla registrada
+const templateReemplazoDialog = ref(false);
+const templateReemplazo = ref(null);
+const reemplazoArchivo = ref(null);
+const reemplazando = ref(false);
 
 // Sample data - in a real app this would come from an API
 const documents = ref([]);
@@ -847,6 +918,7 @@ const loadTemplates = async () => {
         type: mappedType, // Mapear al tipo compatible con las funciones existentes
         description: template.description || 'Sin descripción',
         version: template.version,
+        variables: (template.variables_schema && template.variables_schema.variables) || [],
         is_active: template.is_active,
         created_at: template.created_at,
         updated_at: template.updated_at
@@ -1070,6 +1142,70 @@ const customTemplateUploader = (event) => {
       const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
       newTemplate.value.name = fileNameWithoutExt;
     }
+  }
+};
+
+const openReemplazoTemplate = (template) => {
+  templateReemplazo.value = template;
+  reemplazoArchivo.value = null;
+  templateReemplazoDialog.value = true;
+};
+
+const cerrarReemplazo = () => {
+  templateReemplazoDialog.value = false;
+  templateReemplazo.value = null;
+  reemplazoArchivo.value = null;
+};
+
+const onReemplazoFileSelect = (event) => {
+  const file = event.files && event.files[0];
+  if (!file) return;
+  if (!/\.(docx|dotx)$/i.test(file.name)) {
+    reemplazoArchivo.value = null;
+    toast.add({
+      severity: 'warn',
+      summary: 'Formato no permitido',
+      detail: 'Solo se aceptan archivos .docx o .dotx',
+      life: 6000,
+    });
+    return;
+  }
+  reemplazoArchivo.value = file;
+};
+
+const confirmarReemplazoPlantilla = async () => {
+  if (!templateReemplazo.value || !reemplazoArchivo.value) return;
+  reemplazando.value = true;
+  try {
+    const response = await documentService.reemplazarPlantilla(
+      templateReemplazo.value.code,
+      reemplazoArchivo.value
+    );
+    const plantilla = response.data;
+    const schema = (plantilla && plantilla.variables_schema) || {};
+    const desconocidas = schema.desconocidas || [];
+    const aviso = response.headers && response.headers['x-template-warning'];
+    let detalle = `Versión ${plantilla.version} con ${(schema.variables || []).length} variable(s) detectada(s).`;
+    if (desconocidas.length) detalle += ` Variables no reconocidas: ${desconocidas.join(', ')}.`;
+    if (aviso) detalle += ` Aviso: ${aviso}.`;
+    toast.add({
+      severity: desconocidas.length || aviso ? 'warn' : 'success',
+      summary: 'Plantilla reemplazada',
+      detail: detalle,
+      life: 9000,
+    });
+    await loadTemplates();
+    cerrarReemplazo();
+  } catch (error) {
+    const detalle = error.response && error.response.data && error.response.data.detail;
+    toast.add({
+      severity: 'error',
+      summary: 'No se pudo reemplazar la plantilla',
+      detail: typeof detalle === 'string' ? detalle : 'Revise el archivo y vuelva a intentarlo',
+      life: 9000,
+    });
+  } finally {
+    reemplazando.value = false;
   }
 };
 

@@ -376,6 +376,13 @@ export const documentService = {
     return apiClient.post('/documents/templates', data, config)
   },
 
+  reemplazarPlantilla(code, file) {
+    // Sustituye el DOCX de una plantilla registrada por su código (sube la versión)
+    const data = new FormData()
+    data.append('file', file)
+    return apiClient.put(`/documents/templates/${encodeURIComponent(code)}/content`, data)
+  },
+
   generateDocument(templateId, variables) {
     return apiClient.post(`/documents/generate`, { template_id: templateId, ...variables })
   },
