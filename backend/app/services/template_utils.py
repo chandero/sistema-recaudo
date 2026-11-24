@@ -38,6 +38,8 @@ VARIABLES_OBLIGATORIAS: Dict[str, List[str]] = {
         "fecha_pago",
     ],
     "CONSTANCIA_SECRETARIAL": [
+        # Formato vigente (constancia_secretarial_nueva.docx): la fecha de
+        # ejecutoria salió del cuerpo, por eso no se exige como variable.
         "fecha_constancia",
         "numero_resolucion",
         "fecha_resolucion_larga",
@@ -45,7 +47,6 @@ VARIABLES_OBLIGATORIAS: Dict[str, List[str]] = {
         "direccion_usuario",
         "nombre_usuario",
         "documento_usuario",
-        "fecha_ejecutoria_larga",
     ],
 }
 

@@ -284,8 +284,8 @@ def _problemas_documento(
         problemas.append("sin fecha de resolución")
     if tipo == "auto_archivo" and not fechas.get("fecha_pago"):
         problemas.append("sin fecha de pago total")
-    if tipo == "constancia_secretarial" and not fechas.get("fecha_ejecutoria"):
-        problemas.append("sin fecha de ejecutoria")
+    # La constancia en su formato vigente no imprime la fecha de ejecutoria, así
+    # que no se bloquea por ella; si vuelve el marcador, el contexto la suministra.
     return problemas
 
 

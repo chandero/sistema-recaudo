@@ -48,9 +48,21 @@ Archivos versionados en `backend/app/uploads/templates/`:
   `nombre_usuario`, `documento_usuario`, `fecha_pago`
 - `1_constancia_secretarial.docx` — código `CONSTANCIA_SECRETARIAL`
   `fecha_constancia`, `numero_resolucion`, `fecha_resolucion_larga`,
-  `cuenta_usuario`, `direccion_usuario`, `nombre_usuario`, `documento_usuario`,
-  `fecha_ejecutoria_larga` (el formato repite el bloque dos veces en el mismo
-  archivo; ambos se resuelven con el mismo contexto)
+  `cuenta_usuario`, `direccion_usuario`, `nombre_usuario`, `documento_usuario`
+  (el formato repite el bloque dos veces en el mismo archivo; ambos se resuelven
+  con el mismo contexto)
+
+La constancia se convirtió de `plantillas_nuevas/constancia_secretarial_nueva.docx`,
+que es el **formato vigente**: habla de «resolución y/o factura», cita al
+«propietario y/o poseedor y/o tenedor» y **ya no imprime la fecha de
+ejecutoria**. Por eso `fecha_ejecutoria_larga` salió de
+`VARIABLES_OBLIGATORIAS` y dejó de bloquear la generación; la variable sigue
+llenándose y el campo sigue guardándose en `obligations.executory_date` para el
+caso de que el formato vuelva a pedirla.
+
+En el Auto de Archivo la resolución del caso se cita tres veces (encabezado,
+considerando y artículo primero); las tres son `{{numero_resolucion}}` /
+`{{fecha_resolucion}}`, porque la obligación guarda una sola resolución.
 
 Origen de los datos:
 
@@ -60,7 +72,7 @@ Origen de los datos:
 | `nombre_usuario`, `documento_usuario`, `direccion_usuario` | `Client.name`, `identification`, `address` |
 | `cuenta_usuario` | `obligation.description` (mismo criterio del acto administrativo) |
 | `fecha_pago` | `obligation.paid_date`; si es nula, el último paso del proceso a `PAGADO`/`ARCHIVADO` |
-| `fecha_ejecutoria_larga` | `obligation.executory_date` |
+| `fecha_ejecutoria_larga` | `obligation.executory_date` (se conserva en el contexto, pero el formato vigente no la imprime) |
 | `fecha_constancia` | `notification_date` o la fecha del día |
 
 Los firmantes y el texto normativo quedan impresos en la plantilla, tal como
@@ -68,7 +80,10 @@ llegaron los formatos. Las fechas largas se emiten como `09 de Abril de 2025`.
 
 Los DOCX originales traían datos reales de deudores, por eso **no se versionan**:
 viven en `plantillas_nuevas/` (excluido en `.gitignore`) y solo entran al
-repositorio las plantillas convertidas. Para regenerarlas:
+repositorio las plantillas convertidas. Además de los marcadores, la conversión
+vacía `docProps/core.xml` (autor, quien guardó el archivo, título, fechas
+internas), porque los formatos diligenciados arrastran el nombre y el correo del
+funcionario que los editó. Para regenerarlas:
 
 ```bash
 cd backend
@@ -170,13 +185,16 @@ docker compose run --rm backend python3 -m pytest tests -q
 `backend/tests/test_correspondencia_documentos.py` cubre formatos de fecha,
 derivación de la fecha de pago desde el historial, overrides, persistencia,
 aislamiento por tenant, ZIP DOCX/PDF/ambos, conteos de correo y adjuntos del
-`EmailService`. Además renderiza las dos plantillas oficiales convertidas y
-exige que no quede ningún `{{ }}` sin resolver.
+`EmailService`, y el endpoint de reemplazo (binario, versión, espejo, rechazos y
+no afectación de otros tenants). Además renderiza las dos plantillas oficiales
+convertidas y exige que no quede ningún `{{ }}` sin resolver, que no aparezca un
+solo dato del formato diligenciado de origen y que `docProps/core.xml` no
+conserve autor.
 
 La conversión real a PDF requiere LibreOffice dentro del contenedor (ya se usa
 para la impresión por rango del acto administrativo).
 
-## Limits and notes
+## Límites y notas
 
 - No se generan automáticamente al cambiar el estado a pagado: la orden fue
   generación manual.

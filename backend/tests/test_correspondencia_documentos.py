@@ -4,6 +4,8 @@ Pruebas de generación del Auto de Archivo (GD-F.03) y la Constancia Secretarial
 aislamiento por tenant y envío de correo con adjuntos.
 """
 import io
+import os
+import re
 import smtplib
 import zipfile
 from datetime import date, datetime
@@ -27,6 +29,11 @@ from app.models.tenant import Tenant
 from app.models.user import User, UserRole
 from app.models.workflow import WorkflowState, WorkflowStateCode
 from app.services.email_service import EmailService
+from app.services.template_utils import (
+    VARIABLES_OBLIGATORIAS,
+    extraer_placeholders,
+    validar_plantilla,
+)
 
 
 def _crear_plantilla_docx(marca: str = "") -> bytes:
@@ -317,12 +324,11 @@ def test_problemas_documento_bloquea_faltantes():
     ]
     obligation.resolution_number = "1"
     obligation.resolution_date = date(2025, 1, 1)
-    assert documents._problemas_documento("constancia_secretarial", obligation, {}) == [
-        "sin fecha de ejecutoria"
+    # El formato vigente de la constancia no imprime la fecha de ejecutoria.
+    assert documents._problemas_documento("constancia_secretarial", obligation, {}) == []
+    assert documents._problemas_documento("auto_archivo", obligation, {}) == [
+        "sin fecha de pago total"
     ]
-    assert documents._problemas_documento(
-        "constancia_secretarial", obligation, {"fecha_ejecutoria": date(2025, 2, 1)}
-    ) == []
 
 
 # ─────────────────────────────────────────────────────────────
@@ -716,30 +722,83 @@ def test_email_service_reporta_fallo_sin_explotar(monkeypatch):
 # Plantillas oficiales convertidas
 # ─────────────────────────────────────────────────────────────
 
+def _ruta_plantilla(nombre: str) -> str:
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "app", "uploads", "templates", nombre,
+    )
+
+
+def test_constancia_oficial_tiene_las_variables_del_formato_vigente():
+    """Fija el formato nuevo: sin ejecutoria y sin datos del deudor."""
+    ruta = _ruta_plantilla("1_constancia_secretarial.docx")
+    if not os.path.exists(ruta):
+        pytest.skip("la plantilla convertida no está en el árbol de trabajo")
+
+    with open(ruta, "rb") as archivo:
+        contenido = archivo.read()
+    variables = extraer_placeholders(contenido)
+
+    assert set(variables) == set(VARIABLES_OBLIGATORIAS["CONSTANCIA_SECRETARIAL"])
+    assert "fecha_ejecutoria_larga" not in variables
+    # Validación equivalente a la del endpoint de reemplazo.
+    assert validar_plantilla(contenido, "CONSTANCIA_SECRETARIAL") == variables
+
+
+def test_auto_oficial_variables_la_resolucion_del_caso_en_todo_el_cuerpo():
+    """El cuerpo del Auto de Archivo no puede conservar el número del ejemplo."""
+    ruta = _ruta_plantilla("1_auto_de_archivo.docx")
+    if not os.path.exists(ruta):
+        pytest.skip("la plantilla convertida no está en el árbol de trabajo")
+
+    with open(ruta, "rb") as archivo:
+        contenido = archivo.read()
+    variables = extraer_placeholders(contenido)
+    assert set(variables) == set(VARIABLES_OBLIGATORIAS["AUTO_ARCHIVO"])
+    assert validar_plantilla(contenido, "AUTO_ARCHIVO") == variables
+
+    with zipfile.ZipFile(ruta) as paquete:
+        texto = re.sub(
+            r"<[^>]+>", "", paquete.read("word/document.xml").decode("utf-8")
+        )
+    # Se cita la resolución del caso en el encabezado y dos veces en el cuerpo.
+    assert texto.count("{{numero_resolucion}}") == 3
+    assert texto.count("{{fecha_resolucion}}") == 3
+
+
+def test_plantillas_oficiales_no_conservan_autor_en_metadatos():
+    """docProps/core.xml no puede traer el nombre ni el correo del funcionario."""
+    for nombre in ("1_auto_de_archivo.docx", "1_constancia_secretarial.docx"):
+        ruta = _ruta_plantilla(nombre)
+        if not os.path.exists(ruta):
+            pytest.skip("la plantilla convertida no está en el árbol de trabajo")
+        with zipfile.ZipFile(ruta) as paquete:
+            core = paquete.read("docProps/core.xml").decode("utf-8", "ignore")
+        cuerpo = re.findall(r"<(?:dc:creator|cp:lastModifiedBy)[^>]*>(.*?)</", core, re.S)
+        assert all(not valor.strip() for valor in cuerpo), f"{nombre} conserva {cuerpo}"
+
+
 @pytest.mark.parametrize("nombre", [
     "1_auto_de_archivo.docx",
     "1_constancia_secretarial.docx",
 ])
 def test_plantillas_oficiales_renderizan_sin_tags_colgados(nombre):
     """Render real de la plantilla convertida: ningún {{ }} debe quedar visible."""
-    import os
-
-    ruta = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "app", "uploads", "templates", nombre,
-    )
+    ruta = _ruta_plantilla(nombre)
     if not os.path.exists(ruta):
         pytest.skip("la plantilla convertida no está en el árbol de trabajo")
 
     from docxtpl import DocxTemplate
 
+    # Valores deliberadamente distintos a los del formato diligenciado que se
+    # convirtió, para que una fuga de datos del ejemplo se detecte aquí.
     datos = {
-        "numero_resolucion": "3849",
-        "fecha_resolucion": "2024-11-13",
-        "fecha_pago": "2024-12-19",
-        "fecha_constancia": "08 de Mayo de 2025",
-        "fecha_resolucion_larga": "09 de Abril de 2025",
-        "fecha_ejecutoria_larga": "18 de Junio de 2025",
+        "numero_resolucion": "7777",
+        "fecha_resolucion": "2030-01-31",
+        "fecha_pago": "2030-02-27",
+        "fecha_constancia": "31 de Enero de 2030",
+        "fecha_resolucion_larga": "31 de Enero de 2030",
+        "fecha_ejecutoria_larga": "18 de Febrero de 2030",
         "nombre_usuario": "PRUEBA SIN DATOS REALES",
         "documento_usuario": "1010101",
         "direccion_usuario": "CL 1 1 1",
@@ -751,7 +810,14 @@ def test_plantillas_oficiales_renderizan_sin_tags_colgados(nombre):
 
     assert "{{" not in texto
     assert "}}" not in texto
-    assert "3849" in texto
+    assert "7777" in texto
+    for fugado in ("3849", "2024-11-13", "0447", "2025-03-04", "MARLENY",
+                   "30208284", "MARQUEZ", "28150302", "10879"):
+        assert fugado not in texto, f"{nombre} imprime el dato del ejemplo {fugado}"
+    # Toda variable del contexto llega al documento renderizado.
+    assert "PRUEBA SIN DATOS REALES" in texto
+    assert "1010101" in texto
+    assert "CL 1 1 1" in texto
 
 
 # ─────────────────────────────────────────────────────────────

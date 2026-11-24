@@ -9,6 +9,10 @@ de modo que el formato del primer run (fuente, negrita, tamaño) se conserva.
 Solo usa la librería estándar para poder ejecutarse en el host o en el
 contenedor sin dependencias extra.
 
+Además limpia docProps/core.xml: los formatos diligenciados guardan el nombre y
+el correo del funcionario que los editó, y esa información personal no debe
+quedar versionada en la plantilla.
+
 Uso:
     python3 scripts/convierte_plantillas.py [directorio_de_originales]
 
@@ -37,6 +41,12 @@ PLANES: Dict[str, Dict[str, object]] = {
         "reemplazos": [
             ("0447", "{{numero_resolucion}}", 1),
             ("2025-03-04", "{{fecha_resolucion}}", 1),
+            # El formato diligenciado cita dos veces la resolución que liquidó la
+            # deuda; en el sistema es la misma resolución del caso, así que se
+            # cambian por variables para no imprimir el número del ejemplo en
+            # todos los documentos generados.
+            ("3849", "{{numero_resolucion}}", 2),
+            ("2024-11-13", "{{fecha_resolucion}}", 2),
             ("000000", "{{cuenta_usuario}}", 1),
             ("CLL 35 18 57 RINCON DE GIRON", "{{direccion_usuario}}", 1),
             ("MARLENY BARRERA BARON", "{{nombre_usuario}}", 2),
@@ -44,23 +54,43 @@ PLANES: Dict[str, Dict[str, object]] = {
             ("2024-12-19", "{{fecha_pago}}", 1),
         ],
     },
-    "constancia_secretarial_original.docx": {
+    "constancia_secretarial_nueva.docx": {
+        # Formato vigente: ya no imprime la fecha de ejecutoria y habla de
+        # «resolución y/o factura» con propietario/poseedor/tenedor.
         "destino": os.path.join(PLANTILLA_DESTINO, "1_constancia_secretarial.docx"),
         "codigo": "CONSTANCIA_SECRETARIAL",
         "reemplazos": [
-            ("08 de mayo de 2025", "{{fecha_constancia}}", 1),
-            ("1886", "{{numero_resolucion}}", 2),
-            ("09 de Abril de 2025", "{{fecha_resolucion_larga}}", 2),
-            ("000000", "{{cuenta_usuario}}", 2),
-            ("C 68 32 09 LO 18 MZ O CONJ RES LA", "{{direccion_usuario}}", 2),
-            ("YAEZ PEREZ ALCIDES", "{{nombre_usuario}}", 2),
-            ("5529239", "{{documento_usuario}}", 2),
-            ("18 de Junio de 2025", "{{fecha_ejecutoria_larga}}", 1),
+            ("20 de Octubre de 2025", "{{fecha_constancia}}", 1),
+            ("10879", "{{numero_resolucion}}", 2),
+            ("15 de Septiembre de 2025", "{{fecha_resolucion_larga}}", 2),
+            ("0000000", "{{cuenta_usuario}}", 1),
+            ("C 8B 14 60 MZ B LO 24 UNID RES LOM", "{{direccion_usuario}}", 2),
+            ("MARQUEZ BLANCO NANCY", "{{nombre_usuario}}", 2),
+            ("28150302", "{{documento_usuario}}", 2),
         ],
     },
 }
 
 _ETIQUETA_TEXTO = re.compile(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", re.S)
+
+# Propiedades de texto libre de docProps/core.xml (autor, título, quien guardó).
+_PROP_CORE = re.compile(
+    r"<(dc:title|dc:subject|dc:creator|cp:keywords|dc:description|cp:contentStatus"
+    r"|cp:lastModifiedBy)(?:\s[^>]*)?>.*?</\1>",
+    re.S,
+)
+# Fechas internas: se retiran para no fijar cuándo se convirtió el formato.
+_FECHA_CORE = re.compile(
+    r"<(cp:lastPrinted|dcterms:created|dcterms:modified)[^>]*>.*?</\1>", re.S
+)
+
+
+def _limpiar_metadatos(datos: bytes) -> bytes:
+    """Vacía las propiedades personales de docProps/core.xml."""
+    texto = datos.decode("utf-8", "ignore")
+    texto = _PROP_CORE.sub(lambda m: f"<{m.group(1)}></{m.group(1)}>", texto)
+    texto = _FECHA_CORE.sub("", texto)
+    return texto.encode("utf-8")
 
 
 def _tramos_texto(xml: str) -> List[Tuple[int, int]]:
@@ -151,6 +181,8 @@ def convertir(origen: str, destino: str, reemplazos: List[Reemplazo]) -> Dict[st
         for item, info, datos in informacion:
             if item.filename == "word/document.xml":
                 datos = xml.encode("utf-8")
+            elif item.filename == "docProps/core.xml":
+                datos = _limpiar_metadatos(datos)
             salida.writestr(info, datos)
     return resumen
 

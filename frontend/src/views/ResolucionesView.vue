@@ -770,7 +770,9 @@ const TIPOS_DOCUMENTO = {
     fechas: [
       { clave: 'fecha_constancia', etiqueta: 'Fecha de la constancia', requerida: false },
       { clave: 'fecha_notificacion', etiqueta: 'Fecha de notificación', requerida: false },
-      { clave: 'fecha_ejecutoria', etiqueta: 'Fecha de ejecutoria', requerida: true }
+      // El formato vigente de la constancia no imprime la fecha de ejecutoria:
+      // se sigue ofreciendo para dejarla registrada en la obligación.
+      { clave: 'fecha_ejecutoria', etiqueta: 'Fecha de ejecutoria (registro)', requerida: false }
     ]
   }
 };
@@ -971,9 +973,6 @@ const faltantesFila = (fila) => {
   if (!fila.resolution_date) faltan.push('sin fecha de resolución');
   if (documentosTipo.value === 'auto_archivo' && !fila.fecha_pago) {
     faltan.push('sin fecha de pago total');
-  }
-  if (documentosTipo.value === 'constancia_secretarial' && !fila.fecha_ejecutoria) {
-    faltan.push('sin fecha de ejecutoria');
   }
   return faltan;
 };
