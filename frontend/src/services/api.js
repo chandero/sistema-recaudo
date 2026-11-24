@@ -35,15 +35,25 @@ apiClient.interceptors.request.use(
   }
 )
 
+// Rutas cuyo 401 NO significa sesión caducada: son las que negocian la sesión.
+// Tratarlas como expiración recargaba /login y borraba el mensaje de credenciales
+// antes de que el usuario pudiera leerlo.
+const RUTAS_DE_AUTENTICACION = ['/auth/login', '/auth/token', '/auth/logout', '/auth/switch-tenant']
+
 // Interceptor para manejar errores de autenticación
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Token expirado o inválido
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('user_role')
-      window.location.href = '/login'
+      const url = error.config?.url || ''
+      const esIntentoDeSesion = RUTAS_DE_AUTENTICACION.some((ruta) => url.includes(ruta))
+      // Token expirado o inválido: se limpia la sesión y se vuelve al login, pero
+      // solo si la página no es ya el login (evita recargar sobre el propio error).
+      if (!esIntentoDeSesion && window.location.pathname !== '/login') {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('user_role')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
