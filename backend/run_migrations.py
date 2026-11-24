@@ -5,7 +5,12 @@ Script de migración para despliegues en producción (SQLite).
 La base objetivo se resuelve en este orden:
   1. DATABASE_PATH (compatibilidad con despliegues anteriores)
   2. DATABASE_URL (la variable que realmente lee app/core/config.py)
-  3. /opt/cyberrit/backend/test.db
+  3. La configuración de la propia aplicación (app.core.config.settings)
+  4. /opt/cyberrit/backend/test.db
+
+El punto 3 existe porque dentro del contenedor el código está montado en /app:
+las rutas del servidor (/opt/cyberrit/...) no existen allí, y solo la aplicación
+sabe qué base está usando de verdad.
 
 Este script:
 1. Agrega columnas faltantes en tablas existentes (ALTER TABLE ADD COLUMN).
@@ -41,17 +46,44 @@ def _ruta_desde_url(url: str) -> Optional[str]:
     return None
 
 
-def resolver_ruta_bd() -> Tuple[str, str]:
-    """Devuelve (ruta, origen) de la base que se va a migrar."""
+def _ruta_desde_aplicacion() -> Optional[str]:
+    """Lee la base que va a usar el backend importando su propia configuración.
+
+    Dentro del contenedor no se exporta DATABASE_URL y el working directory es
+    /app, por lo que la aplicación resuelve sqlite:///./test.db. Sin este paso el
+    script caía en la ruta por defecto del servidor (inexistente dentro del contenedor)
+    y terminaba aplicando el ALTER TABLE sobre /opt/riap/db/cartera.db, una base que
+    ya no se monta: la base activa se quedaba sin esquema nuevo.
+    """
+    try:
+        from app.core.config import settings
+    except Exception:
+        # Se ejecuta fuera del entorno de la aplicación (host): no hay configuración
+        # que consultar, así que se sigue el orden histórico.
+        return None
+    return _ruta_desde_url(str(settings.DATABASE_URL))
+
+
+def resolver_ruta_bd() -> Tuple[str, str, bool]:
+    """Devuelve (ruta, origen, estricta) de la base que se va a migrar.
+
+    estricta=True indica que la ruta salió de la configuración de la aplicación: no
+    se buscan rutas alternativas, porque migrar otra base dejaría la activa sin las
+    columnas que el código nuevo espera.
+    """
     explicita = os.environ.get("DATABASE_PATH")
     if explicita:
-        return explicita, "DATABASE_PATH"
+        return explicita, "DATABASE_PATH", False
 
     en_ruta = _ruta_desde_url(os.environ.get("DATABASE_URL", ""))
     if en_ruta:
-        return en_ruta, "DATABASE_URL"
+        return en_ruta, "DATABASE_URL", False
 
-    return DEFAULT_DB_PATH, "ruta por defecto"
+    desde_aplicacion = _ruta_desde_aplicacion()
+    if desde_aplicacion:
+        return desde_aplicacion, "configuración de la aplicación", True
+
+    return DEFAULT_DB_PATH, "ruta por defecto", False
 
 # ─────────────────────────────────────────────────────────────
 # Definición de columnas esperadas por tabla
@@ -259,12 +291,20 @@ def run_migrations(db_path: str) -> bool:
 def main():
     logger.info("🚀 Iniciando migración de base de datos para producción...")
 
-    # Determinar ruta de la BD
-    db_path, origen = resolver_ruta_bd()
+    db_path, origen, estricta = resolver_ruta_bd()
+    db_path = os.path.abspath(db_path)
     logger.info(f"Ruta resuelta desde {origen}: {db_path}")
 
-    # Si la ruta resuelta no existe, buscar alternativas
+    # Si la ruta no existe, solo se buscan alternativas cuando la fuente fue una
+    # variable de entorno o el valor por defecto del servidor.
     if not os.path.exists(db_path):
+        if estricta:
+            logger.error(
+                f"La base que usa la aplicación no existe en {db_path}. Se aborta sin "
+                "probar rutas alternativas: migrar una base distinta dejaría la activa "
+                "sin esquema nuevo y el backend fallaría al leer las columnas nuevas."
+            )
+            return False
         for alt in RUTAS_ALTERNATIVAS:
             if os.path.exists(alt):
                 logger.warning(
