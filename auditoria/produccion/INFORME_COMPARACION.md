@@ -164,6 +164,29 @@ Completan la lista `api.py`, `auth.py`, `users.py`, `config.py`, `database.py`, 
    índice con `git rm --cached` y la clave debería rotarse, porque ya está publicada en GitHub.
 9. `/docs` y `/openapi.json` del backend de producción son accesibles sin autenticación: exponen el
    mapa completo del API, incluidos los módulos de acuerdos de pago y reportes.
+10. **Descubierto al atender los riesgos (severidad máxima):** el arranque sembraba un usuario
+    `admin` / `admin123` con rol `PLATFORM_ADMIN` si no existía. En producción esa cuenta **existe,
+    está activa y acepta `admin123`** (verificado con `verify_password` dentro del contenedor, solo
+    lectura). Convive con el tenant real *Alcaldia de Giron* (130 deudores, 1417 obligaciones,
+    30 acuerdos de pago) y con un `Demo Tenant` creado por la misma semilla.
+
+### 5.1 Estado de cada riesgo tras el endurecimiento
+
+Rama `hardening/riesgos-pre-tarea` (sobre la línea base). Detalle y procedimientos en
+`RUNBOOK_RIESGOS.md`.
+
+| Riesgo | Estado | Dónde se resolvió |
+|---|---|---|
+| 1. Funcionalidad fuera de versiones | Cerrado | rama `baseline/produccion-20261124` + etiqueta |
+| 2. Alembic con múltiples cabeceras | Cerrado | `008_merge_cabeceras.py`: `alembic heads` → 1, `upgrade head` construye 21 tablas desde cero |
+| 3. `DEBUG`/`--reload`/`SECRET_KEY` de respaldo | Cerrado en código | `docker-compose.yml` (sin `--reload`, `SECRET_KEY` y `DATABASE_URL` obligatorios), `docker-compose.dev.yml` para desarrollo |
+| 4. Base de datos dentro del árbol de código | Cerrado en código | compose monta `/var/lib/cyberrit`; `run_migrations.py` deduce la ruta de `DATABASE_URL`. **Mover los datos reales requiere acción en el servidor** (§4 del runbook) |
+| 5. Artefactos versionados (`.bak`, `.pyc`) | Cerrado | 41 archivos retirados del índice, `.gitignore` ampliado |
+| 6. Despliegue sin respaldo ni trazabilidad | Cerrado | `update_system.sh` y `deploy_to_server.sh`: respaldo `.db` previo, `--dry-run`, bloqueo si el árbol está sucio, rama+commit en `.last_update` |
+| 7. `examples/examples/` | Cerrado | excluido de la línea base y del rsync |
+| 8. `.env` versionado con credenciales | Parcial | retirado del índice; **permanece en el historial de git → rotar `SECRET_KEY` es obligatorio** (§3 del runbook) |
+| 9. `/docs` y `/openapi.json` públicos | Cerrado en código | `EXPOSE_API_DOCS` (falso fuera de desarrollo) + validación que niega el arranque en producción mal configurada |
+| 10. `admin` / `admin123` en producción | **Abierto** | El código ya no siembra la clave, pero la cuenta existe en la base del servidor: hay que rotarla e inhabilitarla (§2 del runbook) |
 
 ## 6. Línea base creada
 
@@ -222,3 +245,4 @@ volver a levantar el entorno: `docker compose up -d --build` (backend en `:8055`
 | `15_arranque_docker_local.log`, `16_validacion_runtime.txt` | Arranque y validación de contrato del entorno local |
 | `01_metadata.txt`, `02_listado_mtimes.txt`, `03_frontend_dist.txt`, `04_openapi_prod.json`, `05_datos_inventario.txt`, `06_inventario_modulos.txt`, `07_health_y_frontend_contenedor.txt` | Capturas del servidor |
 | `config/` | compose, nginx activo, Dockerfiles, nombres de variables `.env`, hallazgos de configuración |
+| `RUNBOOK_RIESGOS.md` | Procedimientos de atención de riesgos en el servidor, con respaldo y rollback |

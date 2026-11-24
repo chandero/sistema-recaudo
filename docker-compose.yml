@@ -4,22 +4,32 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: cartera_backend
-    command: sh -c "python3 -c \"from app.core.database import init_db; init_db()\" && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    # Sin --reload: el recargador es de desarrollo y deja procesos huérfanos en producción.
+    command: sh -c "python3 -c \"from app.core.database import init_db; init_db()\" && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
       - ./backend:/app
+      # Datos fuera del árbol de código: rsync/deploy no puede borrarlos.
+      - ${CARTERA_DATA_DIR:-/var/lib/cyberrit}:${CARTERA_DATA_DIR:-/var/lib/cyberrit}
       - /opt/riap/db:/opt/riap/db
     ports:
       - "8055:8000"  # Cambiado de 8001 a 8055
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      DB_PATH: /opt/riap/db/cartera.db
-      USE_SQLITE: "True"
-      SECRET_KEY: ${SECRET_KEY:-supersecretkeychangeinproduction1234567890}
+      # Obligatorio: sin estos valores el contenedor no arranca, en lugar de usar
+      # una clave conocida y una base sqlite dentro del código.
+      DATABASE_URL: ${DATABASE_URL:?Define DATABASE_URL en .env (ej. sqlite:////var/lib/cyberrit/cartera.db)}
+      SECRET_KEY: ${SECRET_KEY:?Define SECRET_KEY en .env}
       ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 480
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DEBUG: "True"
-      ENVIRONMENT: development
+      DEBUG: ${DEBUG:-False}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      EXPOSE_API_DOCS: ${EXPOSE_API_DOCS:-False}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-False}
+      UPLOAD_FOLDER: ${UPLOAD_FOLDER:-./uploads}
     depends_on:
       - redis
     networks:
@@ -28,6 +38,7 @@ services:
   redis:
     image: redis:alpine
     container_name: cartera_redis
+    restart: unless-stopped
     networks:
       - cartera_network
 
@@ -36,6 +47,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: cartera_frontend
+    restart: unless-stopped
     ports:
       - "5055:80"  # Cambiado de 5173 a 5055
     depends_on:

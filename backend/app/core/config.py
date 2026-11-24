@@ -1,11 +1,38 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import List, Optional
 import os
+
+# Valor de desarrollo histórico: nunca aceptable en un entorno expuesto.
+SQLITE_URL_POR_DEFECTO = "sqlite:///./test.db"
+CLAVES_NO_SEGURAS = {
+    "your-secret-key-here",
+    "supersecretkeychangeinproduction1234567890",
+    "cambiar_en_produccion",
+    "secret",
+    "changeme",
+}
+
+
+def _origenes_perm():
+    """Orígenes CORS: los locales de siempre más los que aporte BACKEND_CORS_ORIGINS."""
+    base = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+    ]
+    extras = [o.strip() for o in os.getenv("BACKEND_CORS_ORIGINS", "").split(",") if o.strip()]
+    frontend = os.getenv("FRONTEND_URL", "").strip()
+    if frontend:
+        extras.append(frontend.rstrip("/"))
+    return list(dict.fromkeys(base + extras))
 
 
 class Settings(BaseSettings):
     # Configuración de la base de datos
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", SQLITE_URL_POR_DEFECTO)
     
     # Configuración de JWT
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
@@ -19,17 +46,20 @@ class Settings(BaseSettings):
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     
     # Configuración del entorno
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development").lower()
+    
+    # Superficie expuesta del API: documentación y semilla de datos de prueba
+    EXPOSE_API_DOCS: bool = os.getenv(
+        "EXPOSE_API_DOCS", "true" if ENVIRONMENT == "development" else "false"
+    ).lower() == "true"
+    SEED_DEMO_DATA: bool = os.getenv(
+        "SEED_DEMO_DATA", "true" if ENVIRONMENT == "development" else "false"
+    ).lower() == "true"
+    BOOTSTRAP_ADMIN_PASSWORD: Optional[str] = os.getenv("BOOTSTRAP_ADMIN_PASSWORD")
     
     # Configuración de CORS
-    BACKEND_CORS_ORIGINS: list = [
-        "http://localhost",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",
-    ]
-    CORS_ORIGINS: list = BACKEND_CORS_ORIGINS
+    BACKEND_CORS_ORIGINS: List[str] = _origenes_perm()
+    CORS_ORIGINS: List[str] = _origenes_perm()
     
     # Configuración de logging
     LOG_TO_FILE: bool = os.getenv("LOG_TO_FILE", "true").lower() == "true"
@@ -64,6 +94,35 @@ class Settings(BaseSettings):
     PASSWORD_REQUIRE_SPECIAL_CHARS: bool = os.getenv("PASSWORD_REQUIRE_SPECIAL_CHARS", "true").lower() == "true"
     PASSWORD_REQUIRE_NUMBERS: bool = os.getenv("PASSWORD_REQUIRE_NUMBERS", "true").lower() == "true"
     PASSWORD_REQUIRE_UPPERCASE: bool = os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT == "production"
+
+    @model_validator(mode="after")
+    def _validar_configuracion_de_produccion(self) -> "Settings":
+        """Bloquea el arranque si un entorno expuesto queda con valores de desarrollo.
+
+        En desarrollo no se aplica ninguna restricción: el comportamiento histórico
+        (SQLite local, docs activas, semilla de datos) se conserva intacto.
+        """
+        if not self.ENVIRONMENT.startswith("prod"):
+            return self
+
+        errores: List[str] = []
+        if self.SECRET_KEY in CLAVES_NO_SEGURAS or len(self.SECRET_KEY) < 32:
+            errores.append("SECRET_KEY: define un valor único de mínimo 32 caracteres")
+        if self.DATABASE_URL == SQLITE_URL_POR_DEFECTO:
+            errores.append("DATABASE_URL: apunta a la base del servidor, no a sqlite:///./test.db")
+        if self.DEBUG:
+            errores.append("DEBUG: debe ser false en producción")
+        if self.SEED_DEMO_DATA:
+            errores.append("SEED_DEMO_DATA: debe ser false para no crear Demo Tenant ni estados de prueba")
+        if self.EXPOSE_API_DOCS:
+            errores.append("EXPOSE_API_DOCS: la documentación del API no debe estar pública")
+        if errores:
+            raise ValueError("Configuración insegura en producción -> " + " | ".join(errores))
+        return self
 
 
 settings = Settings()

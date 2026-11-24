@@ -1,2 +1,6 @@
 -r requirements.txt
 pytest==8.2.2
+
+# Ejecutar las pruebas dentro del contenedor de desarrollo:
+#   docker compose run --rm backend pip install -r requirements-dev.txt
+#   docker compose run --rm backend python3 -m pytest tests -q

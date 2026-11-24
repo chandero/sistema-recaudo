@@ -12,7 +12,12 @@ from app.core.security.http_security import HttpSecurityMiddleware
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Sistema de Seguimiento y Control de Cobro de Cartera"
+    description="Sistema de Seguimiento y Control de Cobro de Cartera",
+    # La documentación solo se expone cuando se pide explícitamente (EXPOSE_API_DOCS).
+    # En producción evita que el contrato completo del API sea público.
+    docs_url="/docs" if settings.EXPOSE_API_DOCS else None,
+    redoc_url="/redoc" if settings.EXPOSE_API_DOCS else None,
+    openapi_url="/openapi.json" if settings.EXPOSE_API_DOCS else None,
 )
 
 # Seguridad HTTP (cabeceras de seguridad en todas las respuestas)
@@ -67,8 +72,14 @@ async def startup_event():
     # Initialize database tables
     init_db()
     logger.info("Database initialized")
-    
+    if not settings.EXPOSE_API_DOCS:
+        logger.info("Documentación del API deshabilitada (EXPOSE_API_DOCS=false)")
+
     # Seed initial workflow states (solo para demo, en producción usar migraciones)
+    if not settings.SEED_DEMO_DATA:
+        logger.info("Semilla de datos de demostración deshabilitada (SEED_DEMO_DATA=false)")
+        return
+
     try:
         from sqlmodel import Session, select
         from app.core.database import get_session
@@ -111,11 +122,20 @@ async def startup_event():
         ).first()
         
         if not admin_user:
+            # Sin una contraseña explícita no se crea ninguna cuenta: una clave por
+            # defecto conocida (admin123) en un PLATFORM_ADMIN es accesible desde internet.
+            if not settings.BOOTSTRAP_ADMIN_PASSWORD:
+                logger.warning(
+                    "No existe usuario admin y BOOTSTRAP_ADMIN_PASSWORD no está definida: "
+                    "se omite la creación de la cuenta inicial"
+                )
+                return
+
             admin_user = User(
                 username="admin",
                 email="admin@sistema-cobro.com",
                 full_name="Administrador del Sistema",
-                hashed_password=get_password_hash("admin123"),
+                hashed_password=get_password_hash(settings.BOOTSTRAP_ADMIN_PASSWORD),
                 role=UserRole.PLATFORM_ADMIN,
                 is_active=True,
                 is_platform_admin=True,
@@ -124,7 +144,10 @@ async def startup_event():
             session.add(admin_user)
             session.commit()
             session.refresh(admin_user)
-            logger.info(f"Created default admin user: {admin_user.id}")
+            logger.warning(
+                f"Creado usuario admin inicial: {admin_user.id} "
+                "(defina su contraseña definitiva y retire BOOTSTRAP_ADMIN_PASSWORD)"
+            )
             
     except Exception as e:
         logger.warning(f"Could not seed workflow: {str(e)}")

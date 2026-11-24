@@ -1,0 +1,20 @@
+# Entorno de desarrollo local.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# El archivo principal deja el backend en configuración de producción (sin recarga,
+# sin documentación pública, sin semilla de datos). Este override recupera la
+# comodidad de desarrollo sin tocar la configuración que se despliega al servidor.
+#
+# Requiere DATABASE_URL y SECRET_KEY en .env (ver .env.example); en local puedes
+# usar una base de prueba: DATABASE_URL=sqlite:////app/test.db
+services:
+  backend:
+    command: sh -c "python3 -c \"from app.core.database import init_db; init_db()\" && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      DEBUG: "True"
+      ENVIRONMENT: development
+      EXPOSE_API_DOCS: "True"
+      SEED_DEMO_DATA: "True"
+      # Si se deja vacía no se crea ninguna cuenta: se entra con usuarios ya existentes.
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}

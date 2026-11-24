@@ -1,25 +1,57 @@
 #!/usr/bin/env python3
 """
 Script de migración para despliegues en producción (SQLite).
-Target: /opt/cyberrit/backend/test.db (base de datos activa del backend).
+
+La base objetivo se resuelve en este orden:
+  1. DATABASE_PATH (compatibilidad con despliegues anteriores)
+  2. DATABASE_URL (la variable que realmente lee app/core/config.py)
+  3. /opt/cyberrit/backend/test.db
 
 Este script:
 1. Agrega columnas faltantes en tablas existentes (ALTER TABLE ADD COLUMN).
 2. Crea tablas nuevas si no existen (CREATE TABLE IF NOT EXISTS).
 3. NO borra datos existentes.
-4. NO modifica la tabla alembic_version (el backend usa init_db/create_all).
+4. NO modifica la tabla alembic_version: convive con Alembic pero no la reemplaza.
 """
 
 import os
 import sys
 import sqlite3
 import logging
+from typing import Optional, Tuple
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Ruta de la base de datos activa en el servidor de producción
+# Ruta histórica de la base activa en el servidor de producción
 DEFAULT_DB_PATH = "/opt/cyberrit/backend/test.db"
+
+# Alternativas conocidas, usadas solo si la ruta resuelta no existe
+RUTAS_ALTERNATIVAS = [
+    DEFAULT_DB_PATH,
+    "/opt/riap/db/cartera.db",
+]
+
+
+def _ruta_desde_url(url: str) -> Optional[str]:
+    """Extrae la ruta de archivo de una URL sqlite (relativa o absoluta)."""
+    for prefijo in ("sqlite+aiosqlite:///", "sqlite:///"):
+        if url.startswith(prefijo):
+            return url[len(prefijo):] or None
+    return None
+
+
+def resolver_ruta_bd() -> Tuple[str, str]:
+    """Devuelve (ruta, origen) de la base que se va a migrar."""
+    explicita = os.environ.get("DATABASE_PATH")
+    if explicita:
+        return explicita, "DATABASE_PATH"
+
+    en_ruta = _ruta_desde_url(os.environ.get("DATABASE_URL", ""))
+    if en_ruta:
+        return en_ruta, "DATABASE_URL"
+
+    return DEFAULT_DB_PATH, "ruta por defecto"
 
 # ─────────────────────────────────────────────────────────────
 # Definición de columnas esperadas por tabla
@@ -138,6 +170,15 @@ def run_migrations(db_path: str) -> bool:
         existing_tables = get_existing_tables(cursor)
         logger.info(f"Tablas existentes: {sorted(existing_tables)}")
 
+        # Alembic y este script conviven: si la base nunca se stampó, "alembic upgrade"
+        # desde cero chocaría contra las tablas que create_all ya generó.
+        if "alembic_version" not in existing_tables:
+            logger.warning(
+                "La base no tiene tabla alembic_version: su esquema viene de "
+                "init_db()/create_all y de este script, no de las revisiones de Alembic. "
+                "Antes de usar 'alembic upgrade head' hay que stampar la versión alcanzada."
+            )
+
         changes_made = 0
 
         # ── 1. Agregar columnas faltantes en tablas existentes ──
@@ -212,18 +253,19 @@ def main():
     logger.info("🚀 Iniciando migración de base de datos para producción...")
 
     # Determinar ruta de la BD
-    db_path = os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
+    db_path, origen = resolver_ruta_bd()
+    logger.info(f"Ruta resuelta desde {origen}: {db_path}")
 
-    # Si la ruta por defecto no existe, buscar alternativas
+    # Si la ruta resuelta no existe, buscar alternativas
     if not os.path.exists(db_path):
-        alternatives = [
-            "/opt/cyberrit/backend/test.db",
-            "/opt/riap/db/cartera.db",
-        ]
-        for alt in alternatives:
+        for alt in RUTAS_ALTERNATIVAS:
             if os.path.exists(alt):
+                logger.warning(
+                    f"{db_path} no existe; se usará la alternativa {alt}. "
+                    "Verifica DATABASE_URL antes de continuar: migrar la base equivocada "
+                    "deja la base activa sin esquema nuevo."
+                )
                 db_path = alt
-                logger.info(f"Usando base de datos alternativa: {db_path}")
                 break
         else:
             logger.error("No se encontró ninguna base de datos")

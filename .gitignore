@@ -32,3 +32,9 @@ frontend/dist/
 generados/
 .worktrees/
 auditoria/produccion/copia_servidor/
+
+# Respaldo manual de vistas y artefactos de IDE
+*.bak
+.qoder/
+# Datos locales del entorno de desarrollo
+backend/test.db
