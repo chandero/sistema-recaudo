@@ -23,8 +23,8 @@ SSH="ssh -i ~/.ssh/id_ed25519_tmsoft root@giron.tiksgroup.co"
 |---|--------|--------|-------|
 | R1 | Funcionalidad de producción fuera de control de versiones | **Cerrado** | rama `baseline/produccion-20261124` + etiqueta `prod-20261124` |
 | R2 | Alembic con dos cabeceras (rompe `upgrade head` y `run_migrations.py`) | **Cerrado** | `008_merge_cabeceras.py` |
-| R3 | Cuenta `admin` / `admin123` como PLATFORM_ADMIN accesible desde internet | **Abierto** | servidor (§2) |
-| R4 | `SECRET_KEY` publicada en el historial de git | **Abierto** | servidor + git (§3) |
+| R3 | Cuenta `admin` / `admin123` como PLATFORM_ADMIN accesible desde internet | **Cerrado en el servidor** | §2, ejecutado 2026-11-24 |
+| R4 | `SECRET_KEY` publicada en el historial de git | **Cerrado en el servidor** | §3, ejecutado 2026-11-24 |
 | R5 | Base de datos activa dentro del árbol de código (`backend/test.db`) | **Abierto** | servidor (§4) |
 | R6 | Producción con `DEBUG=True`, `--reload`, `/docs` y `/openapi.json` públicos | **Cerrado en código / abierto en servidor** | §5 |
 | R7 | `.env`, 40 `__pycache__/*.pyc` y un `.bak` versionados | **Cerrado** | índice de git limpio |
@@ -246,7 +246,28 @@ ssh -i ~/.ssh/id_ed25519_tmsoft root@giron.tiksgroup.co \
 
 ---
 
-## 8. Validación ejecutada el 2026-11-24 (rama `hardening/riesgos-pre-tarea`)
+## 8. Bitácora de ejecución en el servidor (2026-11-24)
+
+Acciones escritas en producción, en orden, cada una verificada después:
+
+| Hora | Acción | Resultado |
+|---|---|---|
+| 14:31 | Respaldo consistente de `/opt/cyberrit/backend/test.db` con la API `backup()` de sqlite3 dentro del contenedor → `/opt/cyberrit/backups/test-db-pre-p0-20261124-143132.db.gz` (637 KB) | Integridad verificada descomprimiendo: 25 tablas, 1309 clientes, 1417 obligaciones, 30 acuerdos, `PRAGMA integrity_check = ok` |
+| 14:37 | Rotación de la contraseña de `users.username='admin'` a un valor generado en el servidor (`secrets.token_urlsafe(18)`) y `is_active=0` | `verify_password('admin123', hash)` → **False**; la cuenta sigue existiendo con su historial; 4 usuarios activos intactos |
+| 14:37 | Credencial nueva apartada del árbol de código a `/root/cyberrit-admin-credencial.txt` (mode 600, propietario root) | Leíble solo por SSH: `ssh -i ~/.ssh/id_ed25519_tmsoft root@giron.tiksgroup.co cat /root/cyberrit-admin-credencial.txt` |
+| 14:38 | Copia de seguridad de `/opt/cyberrit/.env` (`.env.pre-rot-<sello>`, mode 600) y rotación de `SECRET_KEY` a 64 caracteres generados en el servidor + `chmod 600 .env` | Backend reiniciado con la clave nueva |
+| 14:39 | Verificación posterior | `GET :8055/health` → 200 · `POST /api/v1/auth/login` con `admin123` → **401 Credenciales inválidas** · frontend `https://giron.cyberrit.tiksgroup.co/` → 200 · API autenticada → 401 (los tokens anteriores quedaron invalidados, como se esperaba) · datos intactos (1309/1417/30) |
+
+No se cambió `ENVIRONMENT`/`DEBUG` en el `.env` del servidor: el código desplegado
+aún es el de la línea base y no valida esa configuración. El paso §5 debe hacerse
+**junto con** el despliegue de `hardening/riesgos-pre-tarea`, no antes.
+
+Pendiente de decidir por el operador: si `admin` debe eliminarse o conservarse
+inhabilitado, y si conviene borrar el `Demo Tenant` (id=2) que no tiene procesos.
+
+---
+
+## 9. Validación de la rama (entorno local, 2026-11-24)
 
 | Prueba | Resultado |
 |--------|-----------|
