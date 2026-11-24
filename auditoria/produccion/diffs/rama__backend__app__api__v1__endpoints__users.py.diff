@@ -1,0 +1,150 @@
+--- rama/backend/app/api/v1/endpoints/users.py
++++ produccion/backend/app/api/v1/endpoints/users.py
+@@ -2,19 +2,20 @@
+ import hashlib
+ import secrets
+ from math import ceil
+-from typing import Optional
++from typing import List, Optional
+ from datetime import datetime, timedelta
+ 
+ from fastapi import APIRouter, Depends, HTTPException, Query, status
++from pydantic import BaseModel
+ from sqlalchemy import or_
+ from sqlalchemy.exc import IntegrityError
+-from sqlmodel import Session
++from sqlmodel import Session, select
+ 
+ from app.core.database import get_session
+ from app.core.config import settings
+ from app.core.dependencies import get_current_user_admin
+ from app.models.tenant import Tenant
+-from app.models.user import User, UserRole
++from app.models.user import User, UserRole, UserTenant
+ from app.models.user_audit import UserAuditAction, UserAuditLog
+ from app.models.user_invitation import UserInvitation
+ from app.repositories.user import pwd_context
+@@ -442,3 +443,123 @@
+     add_audit(session, current_user, user, UserAuditAction.PASSWORD_RESET, {})
+     commit(session)
+     return None
++
++
++# --- Tenant assignment management ---
++
++class TenantAssignmentRequest(BaseModel):
++    tenant_id: int
++    role: str = "OPERATOR"
++
++
++class TenantAssignmentResponse(BaseModel):
++    id: int
++    user_id: int
++    tenant_id: int
++    role: str
++    tenant_name: str = ""
++
++
++@router.get("/{user_id}/tenants", response_model=List[TenantAssignmentResponse])
++def list_user_tenants(
++    user_id: int,
++    current_user: User = Depends(get_current_user_admin),
++    session: Session = Depends(get_session),
++):
++    """Lista todos los tenants asignados a un usuario."""
++    user = scoped_user(session, current_user, user_id)
++    assignments = session.exec(
++        select(UserTenant).where(UserTenant.user_id == user.id)
++    ).all()
++    result = []
++    for ut in assignments:
++        tenant = session.get(Tenant, ut.tenant_id)
++        result.append(TenantAssignmentResponse(
++            id=ut.id,
++            user_id=ut.user_id,
++            tenant_id=ut.tenant_id,
++            role=ut.role.value if hasattr(ut.role, 'value') else ut.role,
++            tenant_name=tenant.name if tenant else "",
++        ))
++    return result
++
++
++@router.post("/{user_id}/tenants", response_model=TenantAssignmentResponse, status_code=status.HTTP_201_CREATED)
++def assign_tenant_to_user(
++    user_id: int,
++    data: TenantAssignmentRequest,
++    current_user: User = Depends(get_current_user_admin),
++    session: Session = Depends(get_session),
++):
++    """Asigna un tenant a un usuario con un rol especifico."""
++    user = scoped_user(session, current_user, user_id)
++    
++    # Validar que el tenant existe
++    tenant = session.get(Tenant, data.tenant_id)
++    if not tenant:
++        raise HTTPException(status_code=404, detail="Tenant no encontrado")
++    
++    # Validar que no existe ya la asignacion
++    existing = session.exec(
++        select(UserTenant).where(
++            UserTenant.user_id == user.id,
++            UserTenant.tenant_id == data.tenant_id,
++        )
++    ).first()
++    if existing:
++        raise HTTPException(status_code=409, detail="El usuario ya tiene asignado este tenant")
++    
++    # Validar que el rol es valido
++    try:
++        role_enum = UserRole(data.role)
++    except ValueError:
++        raise HTTPException(status_code=400, detail=f"Rol invalido: {data.role}")
++    
++    ut = UserTenant(
++        user_id=user.id,
++        tenant_id=data.tenant_id,
++        role=role_enum,
++        created_at=datetime.utcnow(),
++    )
++    session.add(ut)
++    
++    add_audit(session, current_user, user, UserAuditAction.UPDATED, {
++        "tenant_assigned": {"tenant_id": data.tenant_id, "role": data.role}
++    })
++    commit(session)
++    session.refresh(ut)
++    
++    return TenantAssignmentResponse(
++        id=ut.id,
++        user_id=ut.user_id,
++        tenant_id=ut.tenant_id,
++        role=ut.role.value if hasattr(ut.role, 'value') else ut.role,
++        tenant_name=tenant.name,
++    )
++
++
++@router.delete("/{user_id}/tenants/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
++def remove_tenant_from_user(
++    user_id: int,
++    tenant_id: int,
++    current_user: User = Depends(get_current_user_admin),
++    session: Session = Depends(get_session),
++):
++    """Remueve la asignacion de un tenant de un usuario."""
++    user = scoped_user(session, current_user, user_id)
++    
++    ut = session.exec(
++        select(UserTenant).where(
++            UserTenant.user_id == user.id,
++            UserTenant.tenant_id == tenant_id,
++        )
++    ).first()
++    if not ut:
++        raise HTTPException(status_code=404, detail="Asignacion de tenant no encontrada")
++    
++    add_audit(session, current_user, user, UserAuditAction.UPDATED, {
++        "tenant_removed": {"tenant_id": tenant_id}
++    })
++    session.delete(ut)
++    commit(session)
++    return None

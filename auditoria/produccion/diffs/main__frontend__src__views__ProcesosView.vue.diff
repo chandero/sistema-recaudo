@@ -1,0 +1,1233 @@
+--- main/frontend/src/views/ProcesosView.vue
++++ produccion/frontend/src/views/ProcesosView.vue
+@@ -1,38 +1,1211 @@
+ <template>
+-  <div class="placeholder-view">
+-    <Card class="text-center py-5">
+-      <template #header>
+-        <div class="pt-4">
+-          <i class="pi pi-briefcase text-6xl text-color-secondary"></i>
++  <div class="procesos">
++    <PageHeader
++      title="Procesos de Cobro"
++      subtitle="Gestione y haga seguimiento a los procesos de cobranza"
++    >
++      <template #actions>
++        <Button
++          label="Exportar"
++          icon="pi pi-download"
++          severity="secondary"
++          outlined
++          @click="exportProcesses"
++          :disabled="!processes.length"
++        />
++      </template>
++    </PageHeader>
++
++    <!-- Summary bar -->
++    <div class="summary-bar">
++      <div class="summary-item">
++        <span class="summary-label">Total registros</span>
++        <strong class="summary-value">{{ totalRecords }}</strong>
++      </div>
++      <div class="summary-item">
++        <span class="summary-label">Activos</span>
++        <strong class="summary-value">{{ stats.active || 0 }}</strong>
++      </div>
++      <div class="summary-item">
++        <span class="summary-label">Suspendidos</span>
++        <strong class="summary-value">{{ stats.suspended || 0 }}</strong>
++      </div>
++      <div class="summary-item">
++        <span class="summary-label">Cerrados</span>
++        <strong class="summary-value">{{ stats.closed || 0 }}</strong>
++      </div>
++    </div>
++
++    <!-- Filters -->
++    <div class="filters-bar">
++      <Dropdown
++        v-model="selectedStateId"
++        :options="workflowStates"
++        optionLabel="name"
++        optionValue="id"
++        placeholder="Todos los estados"
++        showClear
++        class="state-filter"
++        @change="onStateFilterChange"
++      />
++    </div>
++
++    <DataTableWrapper
++      :value="processes"
++      :columns="tableColumns"
++      :loading="loading"
++      :lazy="true"
++      :first="tableFirst"
++      :default-rows="tableRows"
++      :total-records="totalRecords"
++      :rows-per-page-options="[10, 20, 50, 100]"
++      current-page-report-template="Mostrando {first} - {last} de {totalRecords} procesos"
++      @refresh="loadProcesses"
++      @search-change="onSearchChange"
++      @page="onPageChange"
++      :filter-fields="['reference']"
++    >
++      <template #column-reference="slotProps">
++        <span class="reference-link" @click="openDetail(slotProps.rowData)">
++          {{ slotProps.fieldData }}
++        </span>
++      </template>
++
++      <template #column-current_state_id="slotProps">
++        <div class="state-cell">
++          <Tag
++            :value="getStateName(slotProps.fieldData)"
++            :severity="getStateSeverity(slotProps.fieldData)"
++          />
++          <small v-if="getDaysInState(slotProps.rowData) !== null" class="days-badge" :class="getDaysClass(slotProps.rowData)">
++            {{ getDaysInField(slotProps.rowData) }}d
++          </small>
+         </div>
+       </template>
+-      <template #title>
+-        Procesos de Cobro
+-      </template>
+-      <template #content>
+-        <p class="m-0 text-color-secondary">
+-          Esta funcionalidad estará disponible próximamente.
++
++      <template #column-status="slotProps">
++        <Tag
++          :value="getStatusLabel(slotProps.fieldData)"
++          :severity="getStatusSeverity(slotProps.fieldData)"
++        />
++      </template>
++
++      <template #column-state_changed_at="slotProps">
++        <span>{{ formatDate(slotProps.fieldData) }}</span>
++      </template>
++
++      <template #column-actions="slotProps">
++        <Button
++          icon="pi pi-eye"
++          text
++          severity="info"
++          @click="openDetail(slotProps.rowData)"
++          v-tooltip="'Ver detalle'"
++        />
++        <Button
++          icon="pi pi-arrows-h"
++          text
++          severity="success"
++          @click="openTransition(slotProps.rowData)"
++          v-tooltip="'Cambiar estado'"
++          :disabled="!hasTransitions(slotProps.rowData)"
++        />
++        <Button
++          icon="pi pi-history"
++          text
++          severity="secondary"
++          @click="openTimeline(slotProps.rowData)"
++          v-tooltip="'Historial'"
++        />
++        <Button
++          icon="pi pi-folder"
++          text
++          severity="warning"
++          @click="$router.push(`/procesos/${slotProps.rowData.id}/expediente`)"
++          v-tooltip="'Ver expediente'"
++        />
++      </template>
++    </DataTableWrapper>
++
++    <!-- Detail Drawer -->
++    <Sidebar
++      v-model:visible="detailVisible"
++      :header="`Proceso: ${detailData?.reference || ''}`"
++      position="right"
++      style="width: 480px"
++    >
++      <div v-if="detailData" class="detail-content">
++        <div class="detail-section">
++          <h3>Información General</h3>
++          <div class="detail-grid">
++            <span>Referencia</span>
++            <strong>{{ detailData.reference }}</strong>
++            <span>Estado Actual</span>
++            <Tag
++              :value="detailData.state_info?.state_name || getStateName(detailData.current_state_id)"
++              :severity="getStateSeverity(detailData.current_state_id)"
++            />
++            <span>Días en Estado</span>
++            <strong>
++              {{ detailData.state_info?.days_in_state ?? '-' }}
++              <small v-if="detailData.state_info?.max_days">
++                / {{ detailData.state_info.max_days }} días máx.
++              </small>
++            </strong>
++            <span>Estado Proceso</span>
++            <Tag :value="getStatusLabel(detailData.status)" :severity="getStatusSeverity(detailData.status)" />
++            <span>Cliente</span>
++            <strong>{{ detailData.client_name || 'N/A' }}</strong>
++            <span>Identificación</span>
++            <strong>{{ detailData.client_identification || 'N/A' }}</strong>
++            <span>Total Obligaciones</span>
++            <strong>{{ detailData.total_obligations }}</strong>
++            <span>Monto Total</span>
++            <strong>{{ formatCurrency(detailData.total_amount) }}</strong>
++            <span>Creado</span>
++            <strong>{{ formatDate(detailData.created_at) }}</strong>
++            <span>Última Actualización</span>
++            <strong>{{ formatDate(detailData.updated_at) }}</strong>
++          </div>
++        </div>
++
++        <div class="detail-section" v-if="detailData.available_transitions?.length">
++          <h3>Transiciones Disponibles</h3>
++          <div class="transition-buttons">
++            <Button
++              v-for="t in detailData.available_transitions"
++              :key="t.id"
++              :label="t.target_state_name"
++              :icon="t.is_automatic ? 'pi pi-bolt' : 'pi pi-arrow-right'"
++              :severity="t.is_automatic ? 'warning' : 'info'"
++              outlined
++              size="small"
++              @click="executeTransition(detailData.id, t.target_state_id, t.target_state_name)"
++            />
++          </div>
++        </div>
++
++        <!-- Acuerdo de Pago -->
++        <div class="detail-section">
++          <h3>Acuerdo de Pago</h3>
++          <div v-if="detailData.payment_agreement" class="agreement-summary">
++            <div class="agreement-header-row">
++              <Tag :value="detailData.payment_agreement.status" :severity="getAgreementSeverity(detailData.payment_agreement.status)" />
++              <span class="agreement-number">{{ detailData.payment_agreement.agreement_number }}</span>
++            </div>
++            <div class="detail-grid" style="margin-top: 0.75rem">
++              <span>Valor Acordado</span>
++              <strong>${{ formatCurrencyShort(detailData.payment_agreement.total_agreed) }}</strong>
++              <span>Cuotas</span>
++              <strong>{{ detailData.payment_agreement.paid_installments }} / {{ detailData.payment_agreement.installment_count }} pagadas</strong>
++              <span>Valor Cuota</span>
++              <strong>${{ formatCurrencyShort(detailData.payment_agreement.installment_amount) }}</strong>
++              <span>Total Pagado</span>
++              <strong>${{ formatCurrencyShort(detailData.payment_agreement.total_paid) }}</strong>
++            </div>
++            <div class="agreement-actions">
++              <Button label="Ver Detalle" icon="pi pi-eye" text size="small" severity="info" @click="viewAgreementDetail(detailData.payment_agreement)" />
++              <Button
++                v-if="detailData.payment_agreement.status === 'PROPUESTA'"
++                label="Aceptar" icon="pi pi-check" text size="small" severity="success"
++                @click="viewAgreementDetail(detailData.payment_agreement)"
++              />
++            </div>
++          </div>
++          <div v-else class="no-agreement">
++            <p>Sin acuerdo de pago registrado</p>
++            <Button label="Crear Acuerdo" icon="pi pi-plus" size="small" @click="openCreateAgreement" outlined />
++          </div>
++        </div>
++
++        <div class="detail-section" v-if="detailTimeline.length">
++          <h3>Últimas Actuaciones</h3>
++          <div class="timeline-list">
++            <div v-for="entry in detailTimeline.slice(0, 5)" :key="entry.id" class="timeline-item">
++              <div class="timeline-dot" :class="getActionClass(entry.action)"></div>
++              <div class="timeline-body">
++                <div class="timeline-header">
++                  <strong>{{ entry.action }}</strong>
++                  <small>{{ formatDateTime(entry.created_at) }}</small>
++                </div>
++                <p v-if="entry.description">{{ entry.description }}</p>
++                <small class="timeline-meta" v-if="entry.user_name">
++                  Por: {{ entry.user_name }}
++                </small>
++                <small class="timeline-meta" v-if="entry.previous_state_name && entry.new_state_name">
++                  {{ entry.previous_state_name }} → {{ entry.new_state_name }}
++                </small>
++              </div>
++            </div>
++          </div>
++        </div>
++      </div>
++    </Sidebar>
++
++    <!-- Transition Dialog -->
++    <Dialog
++      v-model:visible="transitionVisible"
++      :style="{ width: '500px' }"
++      header="Cambiar Estado del Proceso"
++      :modal="true"
++      class="p-fluid"
++    >
++      <div v-if="transitionProcess" class="transition-content">
++        <p>
++          Proceso: <strong>{{ transitionProcess.reference }}</strong> —
++          Estado actual: <Tag :value="getStateName(transitionProcess.current_state_id)" :severity="getStateSeverity(transitionProcess.current_state_id)" />
+         </p>
++
++        <div class="field">
++          <label for="targetState">Nuevo Estado</label>
++          <Dropdown
++            id="targetState"
++            v-model="selectedTransitionId"
++            :options="transitionProcess.available_transitions || []"
++            optionLabel="target_state_name"
++            optionValue="target_state_id"
++            placeholder="Seleccione el estado destino"
++          />
++        </div>
++
++        <div class="field">
++          <label for="observations">Observaciones</label>
++          <Textarea
++            id="observations"
++            v-model="transitionObservations"
++            rows="3"
++            placeholder="Motivo o comentario del cambio de estado..."
++          />
++        </div>
++      </div>
++      <template #footer>
++        <Button label="Cancelar" icon="pi pi-times" text @click="transitionVisible = false" />
++        <Button
++          label="Ejecutar Transición"
++          icon="pi pi-check"
++          :disabled="!selectedTransitionId"
++          :loading="transitionLoading"
++          @click="confirmTransition"
++        />
+       </template>
+-    </Card>
++    </Dialog>
++
++    <!-- Timeline Dialog -->
++    <Dialog
++      v-model:visible="timelineVisible"
++      :style="{ width: '650px' }"
++      :header="`Historial — ${timelineProcess?.reference || ''}`"
++      :modal="true"
++    >
++      <div v-if="timelineLoading" class="loading-message">
++        <i class="pi pi-spin pi-spinner" style="font-size: 2rem;"></i>
++        <p>Cargando historial...</p>
++      </div>
++      <div v-else-if="timelineData.length" class="timeline-full">
++        <div v-for="entry in timelineData" :key="entry.id" class="timeline-item">
++          <div class="timeline-dot" :class="getActionClass(entry.action)"></div>
++          <div class="timeline-body">
++            <div class="timeline-header">
++              <strong>{{ entry.action }}</strong>
++              <small>{{ formatDateTime(entry.created_at) }}</small>
++            </div>
++            <p v-if="entry.description">{{ entry.description }}</p>
++            <div class="timeline-meta-row">
++              <small v-if="entry.user_name">Por: {{ entry.user_name }}</small>
++              <small v-if="entry.previous_state_name && entry.new_state_name">
++                {{ entry.previous_state_name }} → {{ entry.new_state_name }}
++              </small>
++            </div>
++          </div>
++        </div>
++      </div>
++      <div v-else class="empty-message">
++        <i class="pi pi-inbox" style="font-size: 2rem;"></i>
++        <p>No hay registros en el historial</p>
++      </div>
++      <template #footer>
++        <Button label="Cerrar" icon="pi pi-times" text @click="timelineVisible = false" />
++      </template>
++    </Dialog>
++
++    <!-- Create Agreement Dialog -->
++    <Dialog v-model:visible="agreementCreateVisible" header="Nuevo Acuerdo de Pago" :modal="true" style="width: 550px">
++      <div v-if="detailData" class="agreement-form">
++        <p class="mb-3">Proceso: <strong>{{ detailData.reference }}</strong> — Cliente: <strong>{{ detailData.client_name || 'N/A' }}</strong></p>
++        <div class="form-grid">
++          <div class="field">
++            <label>Deuda Total</label>
++            <InputNumber v-model="newAgreement.total_debt" :min="0" :locale="'es-CO'" mode="decimal" :minFractionDigits="2" class="w-full" />
++          </div>
++          <div class="field">
++            <label>Valor Acordado</label>
++            <InputNumber v-model="newAgreement.total_agreed" :min="0" :locale="'es-CO'" mode="decimal" :minFractionDigits="2" class="w-full" />
++          </div>
++          <div class="field">
++            <label>Número de Cuotas</label>
++            <InputNumber v-model="newAgreement.installment_count" :min="1" :max="120" class="w-full" />
++          </div>
++          <div class="field">
++            <label>Tasa de Interés (%)</label>
++            <InputNumber v-model="newAgreement.interest_rate" :min="0" :max="100" :minFractionDigits="2" class="w-full" />
++          </div>
++          <div class="field">
++            <label>Fecha Primera Cuota</label>
++            <Calendar v-model="newAgreement.first_payment_date" dateFormat="yy-mm-dd" showIcon class="w-full" />
++          </div>
++          <div class="field">
++            <label>Día de Pago (1-31)</label>
++            <InputNumber v-model="newAgreement.payment_day" :min="1" :max="31" class="w-full" />
++          </div>
++          <div class="field full-width">
++            <label>Observaciones</label>
++            <Textarea v-model="newAgreement.observations" rows="2" class="w-full" />
++          </div>
++        </div>
++      </div>
++      <template #footer>
++        <Button label="Cancelar" icon="pi pi-times" text @click="agreementCreateVisible = false" />
++        <Button label="Crear Acuerdo" icon="pi pi-save" :loading="agreementLoading" @click="createAgreement" :disabled="!newAgreement.total_agreed || newAgreement.total_agreed <= 0" />
++      </template>
++    </Dialog>
++
++    <!-- Agreement Detail Dialog -->
++    <Dialog v-model:visible="agreementDetailVisible" :header="`Acuerdo: ${agreementDetail?.agreement_number || ''}`" :modal="true" style="width: 750px">
++      <div v-if="agreementDetail" class="agreement-detail-content">
++        <div class="detail-grid-info">
++          <div class="detail-item"><span class="detail-label">Estado</span><Tag :value="agreementDetail.status" :severity="getAgreementSeverity(agreementDetail.status)" /></div>
++          <div class="detail-item"><span class="detail-label">Deuda Total</span><strong>${{ formatCurrencyShort(agreementDetail.total_debt) }}</strong></div>
++          <div class="detail-item"><span class="detail-label">Valor Acordado</span><strong>${{ formatCurrencyShort(agreementDetail.total_agreed) }}</strong></div>
++          <div class="detail-item"><span class="detail-label">Cuotas</span><strong>{{ agreementDetail.installment_count }} x ${{ formatCurrencyShort(agreementDetail.installment_amount) }}</strong></div>
++          <div class="detail-item"><span class="detail-label">Tasa Interés</span><strong>{{ agreementDetail.interest_rate }}%</strong></div>
++        </div>
++        <h3 style="margin-top: 1.5rem">Cuotas</h3>
++        <DataTable :value="agreementInstallments" stripedRows size="small">
++          <Column field="installment_number" header="#" style="width: 50px" />
++          <Column field="due_date" header="Vencimiento"><template #body="s">{{ formatDate(s.data.due_date) }}</template></Column>
++          <Column field="amount" header="Valor"><template #body="s">${{ formatCurrencyShort(s.data.amount) }}</template></Column>
++          <Column field="paid_amount" header="Pagado"><template #body="s">${{ formatCurrencyShort(s.data.paid_amount) }}</template></Column>
++          <Column field="status" header="Estado"><template #body="s"><Tag :value="s.data.status" :severity="getInstallmentSeverity(s.data.status)" size="small" /></template></Column>
++          <Column header="Acción" style="width: 80px">
++            <template #body="s">
++              <Button v-if="s.data.status !== 'PAGADA'" icon="pi pi-dollar" text size="small" severity="success" @click="openPayInstallment(s.data)" v-tooltip="'Pagar'" />
++            </template>
++          </Column>
++        </DataTable>
++      </div>
++      <template #footer>
++        <Button v-if="agreementDetail?.status === 'PROPUESTA'" label="Aceptar Acuerdo" icon="pi pi-check" severity="success" @click="acceptAgreementFromDetail" :loading="agreementLoading" />
++        <Button v-if="agreementDetail?.status === 'VIGENTE'" label="Cancelar Acuerdo" icon="pi pi-times" severity="danger" text @click="cancelAgreementFromDetail" />
++        <Button label="Cerrar" icon="pi pi-times" text @click="agreementDetailVisible = false" />
++      </template>
++    </Dialog>
++
++    <!-- Pay Installment Dialog -->
++    <Dialog v-model:visible="agreementPayVisible" header="Registrar Pago de Cuota" :modal="true" style="width: 400px">
++      <div v-if="selectedInstallment" class="form-grid">
++        <div class="field">
++          <label>Cuota #{{ selectedInstallment.installment_number }}</label>
++          <span class="info-text">Vence: {{ formatDate(selectedInstallment.due_date) }}</span>
++        </div>
++        <div class="field">
++          <label>Valor de la cuota</label>
++          <strong>${{ formatCurrencyShort(selectedInstallment.amount) }}</strong>
++        </div>
++        <div class="field">
++          <label>Valor a pagar</label>
++          <InputNumber v-model="payAmount" :min="1" :max="selectedInstallment.amount - selectedInstallment.paid_amount" :locale="'es-CO'" mode="decimal" :minFractionDigits="2" class="w-full" />
++        </div>
++        <div class="field full-width">
++          <label>Observaciones</label>
++          <Textarea v-model="payObservations" rows="2" class="w-full" />
++        </div>
++      </div>
++      <template #footer>
++        <Button label="Cancelar" icon="pi pi-times" text @click="agreementPayVisible = false" />
++        <Button label="Registrar Pago" icon="pi pi-check" :loading="agreementLoading" @click="processInstallmentPayment" :disabled="!payAmount || payAmount <= 0" />
++      </template>
++    </Dialog>
+   </div>
+ </template>
+ 
+ <script setup>
++import { ref, onMounted } from 'vue';
++import { useToast } from 'primevue/usetoast';
++import PageHeader from '@/components/PageHeader.vue';
++import DataTableWrapper from '@/components/DataTableWrapper.vue';
++import Sidebar from 'primevue/sidebar';
++import { processService, workflowService, agreementService } from '@/services/api';
++import { useErrorHandler } from '@/composables/useErrorHandler';
++
++const toast = useToast();
++const { handleError } = useErrorHandler();
++
++// Data
++const processes = ref([]);
++const workflowStates = ref([]);
++const loading = ref(false);
++const totalRecords = ref(0);
++const tableFirst = ref(0);
++const tableRows = ref(20);
++const searchQuery = ref('');
++const selectedStateId = ref(null);
++const stats = ref({ active: 0, suspended: 0, closed: 0 });
++
++// Detail drawer
++const detailVisible = ref(false);
++const detailData = ref(null);
++const detailTimeline = ref([]);
++
++// Transition dialog
++const transitionVisible = ref(false);
++const transitionProcess = ref(null);
++const selectedTransitionId = ref(null);
++const transitionObservations = ref('');
++const transitionLoading = ref(false);
++
++// Timeline dialog
++const timelineVisible = ref(false);
++const timelineProcess = ref(null);
++const timelineData = ref([]);
++const timelineLoading = ref(false);
++
++// Agreement management
++const agreementCreateVisible = ref(false);
++const agreementDetailVisible = ref(false);
++const agreementPayVisible = ref(false);
++const agreementLoading = ref(false);
++const agreementDetail = ref(null);
++const agreementInstallments = ref([]);
++const selectedInstallment = ref(null);
++const payAmount = ref(0);
++const payObservations = ref('');
++const newAgreement = ref({
++  total_debt: 0,
++  total_agreed: 0,
++  interest_rate: 0,
++  installment_count: 1,
++  first_payment_date: new Date(),
++  payment_day: 1,
++  grace_period_months: 0,
++  default_interest_rate: 0,
++  observations: '',
++});
++
++// Table columns
++const tableColumns = ref([
++  { field: 'reference', header: 'Referencia', sortable: true },
++  { field: 'current_state_id', header: 'Estado', sortable: false },
++  { field: 'status', header: 'Proceso', sortable: true },
++  { field: 'state_changed_at', header: 'Cambio Estado', sortable: true },
++  { field: 'observation', header: 'Observación', sortable: false },
++  { field: 'actions', header: 'Acciones', style: 'width: 140px' }
++]);
++
++// State map for quick lookup
++const stateMap = ref({});
++
++onMounted(async () => {
++  await loadWorkflowStates();
++  await loadProcesses();
++  await loadStats();
++});
++
++const loadWorkflowStates = async () => {
++  try {
++    const response = await workflowService.getStates();
++    workflowStates.value = response.data || [];
++    const map = {};
++    workflowStates.value.forEach(s => { map[s.id] = s; });
++    stateMap.value = map;
++  } catch (error) {
++    console.error('Error loading workflow states:', error);
++  }
++};
++
++const loadProcesses = async () => {
++  loading.value = true;
++  try {
++    const page = Math.floor(tableFirst.value / tableRows.value) + 1;
++    const params = {
++      page,
++      page_size: tableRows.value,
++    };
++    if (selectedStateId.value) {
++      params.state_id = selectedStateId.value;
++    }
++    if (searchQuery.value) {
++      params.search = searchQuery.value;
++    }
++    const response = await processService.getAll(params);
++    const data = response.data;
++    if (data && data.items) {
++      processes.value = data.items;
++      totalRecords.value = data.total;
++    } else {
++      processes.value = data || [];
++      totalRecords.value = processes.value.length;
++    }
++  } catch (error) {
++    handleError(error, 'No se pudieron cargar los procesos');
++  } finally {
++    loading.value = false;
++  }
++};
++
++const loadStats = async () => {
++  try {
++    const response = await processService.getStats();
++    const data = response.data;
++    stats.value = {
++      active: data.active_processes || 0,
++      suspended: data.suspended_processes || 0,
++      closed: data.closed_processes || 0,
++    };
++  } catch (error) {
++    console.error('Error loading stats:', error);
++  }
++};
++
++const onPageChange = async (event) => {
++  tableFirst.value = event.first;
++  tableRows.value = event.rows;
++  await loadProcesses();
++};
++
++const onSearchChange = (value) => {
++  searchQuery.value = value.trim();
++  tableFirst.value = 0;
++  loadProcesses();
++};
++
++const onStateFilterChange = () => {
++  tableFirst.value = 0;
++  loadProcesses();
++};
++
++// State helpers
++const getStateName = (stateId) => {
++  return stateMap.value[stateId]?.name || stateMap.value[stateId]?.code || `Estado ${stateId}`;
++};
++
++const getStateSeverity = (stateId) => {
++  const code = stateMap.value[stateId]?.code || '';
++  if (code.includes('PAGADO')) return 'success';
++  if (code.includes('INCOBRABLE') || code.includes('INCUMPLIDO')) return 'danger';
++  if (code.includes('ARCHIVADO') || code.includes('CERRADO')) return 'secondary';
++  if (code.includes('ACUERDO') || code.includes('SEGUIMIENTO')) return 'info';
++  if (code.includes('COBRO') || code.includes('NOTIFICACION')) return 'warning';
++  return 'info';
++};
++
++const getStatusLabel = (status) => {
++  const labels = { ACTIVE: 'Activo', SUSPENDED: 'Suspendido', CLOSED: 'Cerrado' };
++  return labels[status] || status;
++};
++
++const getStatusSeverity = (status) => {
++  const severities = { ACTIVE: 'success', SUSPENDED: 'warning', CLOSED: 'secondary' };
++  return severities[status] || 'info';
++};
++
++const getDaysInField = (rowData) => {
++  if (!rowData.state_changed_at) return null;
++  const changed = new Date(rowData.state_changed_at);
++  const now = new Date();
++  return Math.floor((now - changed) / (1000 * 60 * 60 * 24));
++};
++
++const getDaysInState = (rowData) => getDaysInField(rowData);
++
++const getDaysClass = (rowData) => {
++  const days = getDaysInField(rowData);
++  const maxDays = stateMap.value[rowData.current_state_id]?.max_days;
++  if (!days || !maxDays) return '';
++  const ratio = days / maxDays;
++  if (ratio >= 1) return 'days-expired';
++  if (ratio >= 0.75) return 'days-warning';
++  return 'days-ok';
++};
++
++const hasTransitions = (rowData) => {
++  return rowData.available_transitions?.length > 0;
++};
++
++// Detail
++const openDetail = async (process) => {
++  try {
++    const response = await processService.getDetail(process.id);
++    detailData.value = response.data;
++    // Load a few timeline entries
++    const timelineResponse = await processService.getTimeline(process.id);
++    detailTimeline.value = timelineResponse.data || [];
++    detailVisible.value = true;
++  } catch (error) {
++    handleError(error, 'No se pudo cargar el detalle del proceso');
++  }
++};
++
++// Transition
++const openTransition = (process) => {
++  if (!process.available_transitions?.length) {
++    // Load detail to get transitions
++    processService.getDetail(process.id).then(response => {
++      transitionProcess.value = response.data;
++      selectedTransitionId.value = null;
++      transitionObservations.value = '';
++      transitionVisible.value = true;
++    }).catch(error => {
++      handleError(error, 'No se pudieron cargar las transiciones disponibles');
++    });
++    return;
++  }
++  transitionProcess.value = process;
++  selectedTransitionId.value = null;
++  transitionObservations.value = '';
++  transitionVisible.value = true;
++};
++
++const executeTransition = async (processId, targetStateId, stateName) => {
++  if (!confirm(`¿Desea cambiar el estado a "${stateName}"?`)) return;
++  try {
++    await processService.transition(processId, targetStateId, 'Transición ejecutada desde detalle');
++    toast.add({ severity: 'success', summary: 'Éxito', detail: `Estado cambiado a ${stateName}`, life: 3000 });
++    await loadProcesses();
++    await loadStats();
++    // Refresh detail
++    const response = await processService.getDetail(processId);
++    detailData.value = response.data;
++  } catch (error) {
++    handleError(error, 'No se pudo ejecutar la transición');
++  }
++};
++
++const confirmTransition = async () => {
++  if (!selectedTransitionId.value || !transitionProcess.value) return;
++  transitionLoading.value = true;
++  try {
++    const stateName = stateMap.value[selectedTransitionId.value]?.name || 'nuevo estado';
++    await processService.transition(
++      transitionProcess.value.id,
++      selectedTransitionId.value,
++      transitionObservations.value
++    );
++    toast.add({ severity: 'success', summary: 'Éxito', detail: `Estado cambiado a ${stateName}`, life: 3000 });
++    transitionVisible.value = false;
++    await loadProcesses();
++    await loadStats();
++  } catch (error) {
++    handleError(error, 'No se pudo ejecutar la transición');
++  } finally {
++    transitionLoading.value = false;
++  }
++};
++
++// Timeline
++const openTimeline = async (process) => {
++  timelineProcess.value = process;
++  timelineVisible.value = true;
++  timelineLoading.value = true;
++  try {
++    const response = await processService.getTimeline(process.id);
++    timelineData.value = response.data || [];
++  } catch (error) {
++    handleError(error, 'No se pudo cargar el historial');
++  } finally {
++    timelineLoading.value = false;
++  }
++};
++
++const getActionClass = (action) => {
++  if (action.includes('TRANSICION') || action.includes('CAMBIO')) return 'dot-transition';
++  if (action.includes('ASIGNACION')) return 'dot-assignment';
++  if (action.includes('CREACION')) return 'dot-creation';
++  return 'dot-default';
++};
++
++// Format helpers
++const formatDate = (dateString) => {
++  if (!dateString) return '-';
++  return new Date(dateString).toLocaleDateString('es-CO', {
++    year: 'numeric', month: 'short', day: 'numeric'
++  });
++};
++
++const formatDateTime = (dateString) => {
++  if (!dateString) return '-';
++  return new Date(dateString).toLocaleDateString('es-CO', {
++    year: 'numeric', month: 'short', day: 'numeric',
++    hour: '2-digit', minute: '2-digit'
++  });
++};
++
++const formatCurrency = (amount) => {
++  if (!amount && amount !== 0) return '-';
++  return new Intl.NumberFormat('es-CO', {
++    style: 'currency', currency: 'COP', minimumFractionDigits: 0
++  }).format(amount);
++};
++
++const formatCurrencyShort = (v) => {
++  if (v === null || v === undefined) return '0';
++  return Math.round(v).toLocaleString('es-CO');
++};
++
++const getAgreementSeverity = (s) => {
++  const map = { PROPUESTA: 'info', VIGENTE: 'success', CUMPLIDO: 'success', INCUMPLIDO: 'danger', CANCELADO: 'secondary' };
++  return map[s] || 'info';
++};
++
++const getInstallmentSeverity = (s) => {
++  const map = { PENDIENTE: 'warning', PAGADA: 'success', VENCIDA: 'danger', PARCIAL: 'info' };
++  return map[s] || 'info';
++};
++
++// Agreement actions
++const openCreateAgreement = () => {
++  const oblTotal = detailData.value?.total_amount || 0;
++  newAgreement.value = {
++    total_debt: oblTotal, total_agreed: oblTotal, interest_rate: 0,
++    installment_count: 1, first_payment_date: new Date(), payment_day: 1,
++    grace_period_months: 0, default_interest_rate: 0, observations: '',
++  };
++  agreementCreateVisible.value = true;
++};
++
++const createAgreement = async () => {
++  if (!detailData.value) return;
++  agreementLoading.value = true;
++  try {
++    await agreementService.create({
++      process_id: detailData.value.id,
++      ...newAgreement.value,
++      first_payment_date: new Date(newAgreement.value.first_payment_date).toISOString().split('T')[0],
++    });
++    agreementCreateVisible.value = false;
++    toast.add({ severity: 'success', summary: 'Acuerdo creado', detail: 'El acuerdo de pago fue creado exitosamente', life: 3000 });
++    // Refresh detail
++    const response = await processService.getDetail(detailData.value.id);
++    detailData.value = response.data;
++    await loadProcesses();
++  } catch (e) {
++    toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.detail || 'No se pudo crear el acuerdo', life: 5000 });
++  } finally {
++    agreementLoading.value = false;
++  }
++};
++
++const viewAgreementDetail = async (agreementInfo) => {
++  agreementLoading.value = true;
++  try {
++    const resp = await agreementService.getById(agreementInfo.id);
++    agreementDetail.value = resp.data;
++    agreementInstallments.value = resp.data.installments || [];
++    agreementDetailVisible.value = true;
++  } catch (e) {
++    toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar el detalle del acuerdo', life: 3000 });
++  } finally {
++    agreementLoading.value = false;
++  }
++};
++
++const acceptAgreementFromDetail = async () => {
++  if (!agreementDetail.value) return;
++  agreementLoading.value = true;
++  try {
++    await agreementService.accept(agreementDetail.value.id);
++    toast.add({ severity: 'success', summary: 'Acuerdo aceptado', detail: 'El acuerdo ahora está VIGENTE', life: 3000 });
++    agreementDetailVisible.value = false;
++    // Refresh process detail
++    const response = await processService.getDetail(detailData.value.id);
++    detailData.value = response.data;
++    await loadProcesses();
++  } catch (e) {
++    toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.detail || 'No se pudo aceptar el acuerdo', life: 5000 });
++  } finally {
++    agreementLoading.value = false;
++  }
++};
++
++const openPayInstallment = (installment) => {
++  selectedInstallment.value = installment;
++  payAmount.value = installment.amount - installment.paid_amount;
++  payObservations.value = '';
++  agreementPayVisible.value = true;
++};
++
++const processInstallmentPayment = async () => {
++  if (!selectedInstallment.value || !agreementDetail.value) return;
++  agreementLoading.value = true;
++  try {
++    await agreementService.payInstallment(agreementDetail.value.id, selectedInstallment.value.id, {
++      paid_amount: payAmount.value,
++      observations: payObservations.value,
++    });
++    agreementPayVisible.value = false;
++    toast.add({ severity: 'success', summary: 'Pago registrado', detail: `Cuota #${selectedInstallment.value.installment_number} pagada`, life: 3000 });
++    // Reload agreement detail
++    const resp = await agreementService.getById(agreementDetail.value.id);
++    agreementDetail.value = resp.data;
++    agreementInstallments.value = resp.data.installments || [];
++    // Reload process detail
++    const response = await processService.getDetail(detailData.value.id);
++    detailData.value = response.data;
++    await loadProcesses();
++  } catch (e) {
++    toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.detail || 'No se pudo registrar el pago', life: 5000 });
++  } finally {
++    agreementLoading.value = false;
++  }
++};
++
++const cancelAgreementFromDetail = async () => {
++  if (!agreementDetail.value) return;
++  if (!confirm('¿Está seguro de cancelar este acuerdo de pago?')) return;
++  agreementLoading.value = true;
++  try {
++    await agreementService.cancel(agreementDetail.value.id);
++    toast.add({ severity: 'warn', summary: 'Acuerdo cancelado', life: 3000 });
++    agreementDetailVisible.value = false;
++    const response = await processService.getDetail(detailData.value.id);
++    detailData.value = response.data;
++    await loadProcesses();
++  } catch (e) {
++    toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.detail || 'No se pudo cancelar el acuerdo', life: 5000 });
++  } finally {
++    agreementLoading.value = false;
++  }
++};
++
++const exportProcesses = () => {
++  const headers = ['Referencia', 'Estado', 'Proceso', 'Cambio Estado', 'Observación'];
++  const rows = processes.value.map(p => [
++    p.reference,
++    getStateName(p.current_state_id),
++    getStatusLabel(p.status),
++    formatDate(p.state_changed_at),
++    p.observation || ''
++  ]);
++  const csv = [headers, ...rows]
++    .map(row => row.map(v => `"${String(v ?? '').replaceAll('"', '""')}"`).join(','))
++    .join('\n');
++  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
++  const url = URL.createObjectURL(blob);
++  const link = document.createElement('a');
++  link.href = url;
++  link.download = `procesos-${new Date().toISOString().slice(0, 10)}.csv`;
++  link.click();
++  URL.revokeObjectURL(url);
++};
+ </script>
+ 
+ <style scoped>
+-.placeholder-view {
++.procesos {
+   padding: 2rem;
++}
++
++.summary-bar {
+   display: flex;
+-  justify-content: center;
++  gap: 1rem;
++  margin-bottom: 1rem;
++}
++
++.summary-item {
++  background: var(--surface-card);
++  border: 1px solid var(--surface-border);
++  border-radius: 8px;
++  padding: 0.875rem 1rem;
++  min-width: 150px;
++}
++
++.summary-label {
++  display: block;
++  color: #6b7280;
++  font-size: 0.875rem;
++  margin-bottom: 0.25rem;
++}
++
++.summary-value {
++  color: var(--text-color);
++  font-size: 1.4rem;
++  line-height: 1;
++}
++
++.filters-bar {
++  display: flex;
++  gap: 1rem;
++  margin-bottom: 1rem;
+   align-items: center;
+-  min-height: 60vh;
+ }
+ 
+-.text-center {
+-  text-align: center;
+-  max-width: 500px;
+-  width: 100%;
++.state-filter {
++  min-width: 250px;
++}
++
++.reference-link {
++  color: var(--primary-color, #3b82f6);
++  cursor: pointer;
++  font-weight: 500;
++}
++
++.reference-link:hover {
++  text-decoration: underline;
++}
++
++.state-cell {
++  display: flex;
++  align-items: center;
++  gap: 0.5rem;
++}
++
++.days-badge {
++  font-size: 0.7rem;
++  padding: 2px 6px;
++  border-radius: 10px;
++  font-weight: 600;
++  white-space: nowrap;
++}
++
++.days-ok {
++  background: #dcfce7;
++  color: #166534;
++}
++
++.days-warning {
++  background: #fef9c3;
++  color: #854d0e;
++}
++
++.days-expired {
++  background: #fee2e2;
++  color: #991b1b;
++}
++
++/* Detail drawer */
++.detail-content {
++  padding: 0 0.5rem;
++}
++
++.detail-section {
++  margin-bottom: 1.5rem;
++}
++
++.detail-section h3 {
++  font-size: 1rem;
++  font-weight: 600;
++  color: var(--text-color);
++  margin: 0 0 0.75rem 0;
++  padding-bottom: 0.5rem;
++  border-bottom: 1px solid var(--surface-border);
++}
++
++.detail-grid {
++  display: grid;
++  grid-template-columns: 140px 1fr;
++  gap: 0.6rem 1rem;
++  align-items: center;
++}
++
++.detail-grid span {
++  color: #6b7280;
++  font-size: 0.875rem;
++}
++
++.transition-buttons {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.5rem;
++}
++
++/* Agreement section */
++.agreement-summary {
++  background: var(--surface-section);
++  border: 1px solid var(--surface-border);
++  border-radius: 8px;
++  padding: 1rem;
++}
++
++.agreement-header-row {
++  display: flex;
++  align-items: center;
++  gap: 0.75rem;
++}
++
++.agreement-number {
++  font-weight: 600;
++  color: var(--text-color);
++}
++
++.agreement-actions {
++  display: flex;
++  gap: 0.5rem;
++  margin-top: 0.75rem;
++  padding-top: 0.75rem;
++  border-top: 1px solid var(--surface-border);
++}
++
++.no-agreement {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  padding: 0.75rem;
++  background: var(--surface-section);
++  border: 1px dashed var(--surface-border);
++  border-radius: 8px;
++}
++
++.no-agreement p {
++  margin: 0;
++  color: var(--text-color-secondary);
++  font-size: 0.9rem;
++}
++
++.agreement-form .form-grid {
++  display: grid;
++  grid-template-columns: 1fr 1fr;
++  gap: 1rem;
++}
++
++.agreement-form .full-width {
++  grid-column: 1 / -1;
++}
++
++.agreement-detail-content .detail-grid-info {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
++  gap: 1rem;
++}
++
++.agreement-detail-content .detail-item {
++  display: flex;
++  flex-direction: column;
++  gap: 0.25rem;
++}
++
++.agreement-detail-content .detail-label {
++  font-size: 0.8rem;
++  color: var(--text-color-secondary);
++  text-transform: uppercase;
++}
++
++.field {
++  display: flex;
++  flex-direction: column;
++  gap: 0.5rem;
++}
++
++.field label {
++  font-weight: 600;
++  font-size: 0.875rem;
++  color: var(--text-color);
++}
++
++.info-text {
++  font-size: 0.85rem;
++  color: var(--text-color-secondary);
++}
++
++/* Timeline */
++.timeline-list, .timeline-full {
++  padding: 0 0.5rem;
++}
++
++.timeline-item {
++  display: flex;
++  gap: 0.75rem;
++  padding: 0.75rem 0;
++  border-left: 2px solid var(--surface-border);
++  margin-left: 0.5rem;
++  padding-left: 1.25rem;
++  position: relative;
++}
++
++.timeline-dot {
++  width: 10px;
++  height: 10px;
++  border-radius: 50%;
++  position: absolute;
++  left: -6px;
++  top: 1rem;
++}
++
++.dot-transition { background: #3b82f6; }
++.dot-assignment { background: #f59e0b; }
++.dot-creation { background: #22c55e; }
++.dot-default { background: #6b7280; }
++
++.timeline-body {
++  flex: 1;
++}
++
++.timeline-header {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  margin-bottom: 0.25rem;
++}
++
++.timeline-header strong {
++  font-size: 0.875rem;
++}
++
++.timeline-header small {
++  color: #6b7280;
++  font-size: 0.75rem;
++}
++
++.timeline-body p {
++  margin: 0.25rem 0;
++  font-size: 0.85rem;
++  color: var(--text-color-secondary);
++}
++
++.timeline-meta-row {
++  display: flex;
++  gap: 1rem;
++  margin-top: 0.25rem;
++}
++
++.timeline-meta {
++  color: #6b7280;
++  font-size: 0.75rem;
++}
++
++.loading-message, .empty-message {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  padding: 2rem;
++  color: var(--text-color-secondary);
++}
++
++.transition-content p {
++  margin-bottom: 1rem;
++}
++
++.field {
++  margin-bottom: 1rem;
++}
++
++.field label {
++  display: block;
++  margin-bottom: 0.5rem;
++  font-weight: 500;
++}
++
++@media (max-width: 768px) {
++  .summary-bar {
++    flex-wrap: wrap;
++  }
++  .summary-item {
++    flex: 1;
++    min-width: 120px;
++  }
++  .filters-bar {
++    flex-wrap: wrap;
++  }
++  .state-filter {
++    width: 100%;
++  }
+ }
+ </style>

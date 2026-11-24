@@ -1,26 +1,41 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlmodel import Session, select
 from typing import List, Optional
+from datetime import datetime
 from app.core.database import get_session
 from app.core.dependencies import get_current_active_user
 from app.models.workflow import WorkflowState, WorkflowStateCode, WorkflowTransition
-from app.models.user import User
-from app.schemas.workflow import WorkflowStateResponse, WorkflowTransitionResponse
+from app.models.process import CobroProcess, ProcessHistory, ProcessStatus
+from app.models.user import User, UserRole
+from app.models.client import Client
+from app.models.obligation import Obligation
+from app.models.tenant import Tenant
+from app.schemas.workflow import (
+    WorkflowStateResponse, WorkflowStateCreate, WorkflowStateUpdate,
+    WorkflowTransitionResponse, WorkflowTransitionCreate,
+    KanbanResponse, KanbanColumn, KanbanCard,
+    WorkflowDesignerResponse, TransitionRuleResponse,
+)
 
 router = APIRouter()
 
 
+# --- Workflow States ---
+
 @router.get("/states/", response_model=List[WorkflowStateResponse])
 async def get_workflow_states(
+    include_inactive: bool = False,
     current_user: User = Depends(get_current_active_user),
     session: Session = Depends(get_session)
 ):
     """Obtener estados del workflow del tenant."""
     statement = select(WorkflowState).where(
         WorkflowState.tenant_id == current_user.tenant_id,
-        WorkflowState.is_active == True
-    ).order_by(WorkflowState.order)
-    
+    )
+    if not include_inactive:
+        statement = statement.where(WorkflowState.is_active == True)
+    statement = statement.order_by(WorkflowState.order)
     states = session.exec(statement).all()
     return states
 
@@ -40,11 +55,12 @@ async def get_workflow_state(
 
 @router.post("/states/", response_model=WorkflowStateResponse)
 async def create_workflow_state(
-    state_in: WorkflowStateResponse,
+    state_in: WorkflowStateCreate,
     current_user: User = Depends(get_current_active_user),
     session: Session = Depends(get_session)
 ):
-    """Crear un nuevo estado del workflow."""
+    """Crear un nuevo estado del workflow. Requiere rol MANAGER o superior."""
+    _require_manager(current_user)
     # Verificar si ya existe código
     statement = select(WorkflowState).where(
         WorkflowState.code == state_in.code,
@@ -54,8 +70,39 @@ async def create_workflow_state(
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un estado con este código")
     
-    state = WorkflowState.from_orm(state_in)
-    state.tenant_id = current_user.tenant_id
+    state = WorkflowState(
+        code=state_in.code,
+        name=state_in.name,
+        description=state_in.description,
+        order=state_in.order,
+        max_days=state_in.max_days,
+        is_final=state_in.is_final,
+        is_active=state_in.is_active,
+        tenant_id=current_user.tenant_id,
+    )
+    session.add(state)
+    session.commit()
+    session.refresh(state)
+    return state
+
+
+@router.put("/states/{state_id}", response_model=WorkflowStateResponse)
+async def update_workflow_state(
+    state_id: int,
+    state_in: WorkflowStateUpdate,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Actualizar un estado del workflow."""
+    _require_manager(current_user)
+    state = session.get(WorkflowState, state_id)
+    if not state or (state.tenant_id and state.tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=404, detail="Estado no encontrado")
+    
+    update_data = state_in.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(state, key, value)
+    state.updated_at = datetime.utcnow()
     
     session.add(state)
     session.commit()
@@ -63,36 +110,553 @@ async def create_workflow_state(
     return state
 
 
+@router.delete("/states/{state_id}")
+async def delete_workflow_state(
+    state_id: int,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Desactivar un estado del workflow (soft delete). No permite si tiene procesos activos en ese estado."""
+    _require_manager(current_user)
+    state = session.get(WorkflowState, state_id)
+    if not state or (state.tenant_id and state.tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=404, detail="Estado no encontrado")
+    
+    # Verificar si hay procesos activos en este estado
+    active_count = session.exec(
+        select(CobroProcess).where(
+            CobroProcess.tenant_id == current_user.tenant_id,
+            CobroProcess.current_state_id == state_id,
+            CobroProcess.status == ProcessStatus.ACTIVE,
+        )
+    ).all()
+    if active_count:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede desactivar: hay {len(active_count)} proceso(s) activo(s) en este estado"
+        )
+    
+    state.is_active = False
+    state.updated_at = datetime.utcnow()
+    session.add(state)
+    session.commit()
+    return {"message": f"Estado '{state.name}' desactivado correctamente"}
+
+
+# --- Workflow Transitions ---
+
 @router.get("/transitions/", response_model=List[WorkflowTransitionResponse])
 async def get_workflow_transitions(
     state_id: Optional[int] = None,
+    include_inactive: bool = False,
     current_user: User = Depends(get_current_active_user),
     session: Session = Depends(get_session)
 ):
     """Obtener transiciones del workflow."""
     statement = select(WorkflowTransition).where(
         WorkflowTransition.tenant_id == current_user.tenant_id,
-        WorkflowTransition.is_active == True
     )
-    
+    if not include_inactive:
+        statement = statement.where(WorkflowTransition.is_active == True)
     if state_id:
         statement = statement.where(WorkflowTransition.source_state_id == state_id)
-    
     transitions = session.exec(statement).all()
     return transitions
 
 
 @router.post("/transitions/", response_model=WorkflowTransitionResponse)
 async def create_workflow_transition(
-    transition_in: WorkflowTransitionResponse,
+    transition_in: WorkflowTransitionCreate,
     current_user: User = Depends(get_current_active_user),
     session: Session = Depends(get_session)
 ):
     """Crear una nueva transición del workflow."""
-    transition = WorkflowTransition.from_orm(transition_in)
-    transition.tenant_id = current_user.tenant_id
+    _require_manager(current_user)
+    # Validar que los estados existen y pertenecen al tenant
+    source = session.get(WorkflowState, transition_in.source_state_id)
+    target = session.get(WorkflowState, transition_in.target_state_id)
+    if not source or (source.tenant_id and source.tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=404, detail="Estado origen no encontrado")
+    if not target or (target.tenant_id and target.tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=404, detail="Estado destino no encontrado")
+    
+    # Verificar duplicados
+    existing = session.exec(
+        select(WorkflowTransition).where(
+            WorkflowTransition.tenant_id == current_user.tenant_id,
+            WorkflowTransition.source_state_id == transition_in.source_state_id,
+            WorkflowTransition.target_state_id == transition_in.target_state_id,
+            WorkflowTransition.is_active == True,
+        )
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya existe esta transición")
+    
+    transition = WorkflowTransition(
+        name=transition_in.name,
+        source_state_id=transition_in.source_state_id,
+        target_state_id=transition_in.target_state_id,
+        is_automatic=transition_in.is_automatic,
+        condition_days=transition_in.condition_days,
+        condition_type=transition_in.condition_type,
+        is_active=transition_in.is_active,
+        tenant_id=current_user.tenant_id,
+    )
+    session.add(transition)
+    session.commit()
+    session.refresh(transition)
+    return transition
+
+
+@router.put("/transitions/{transition_id}", response_model=WorkflowTransitionResponse)
+async def update_workflow_transition(
+    transition_id: int,
+    transition_in: WorkflowTransitionCreate,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Actualizar una transición del workflow."""
+    _require_manager(current_user)
+    transition = session.get(WorkflowTransition, transition_id)
+    if not transition or (transition.tenant_id and transition.tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=404, detail="Transición no encontrada")
+    
+    transition.name = transition_in.name
+    transition.source_state_id = transition_in.source_state_id
+    transition.target_state_id = transition_in.target_state_id
+    transition.is_automatic = transition_in.is_automatic
+    transition.condition_days = transition_in.condition_days
+    transition.condition_type = transition_in.condition_type
+    transition.is_active = transition_in.is_active
     
     session.add(transition)
     session.commit()
     session.refresh(transition)
     return transition
+
+
+@router.delete("/transitions/{transition_id}")
+async def delete_workflow_transition(
+    transition_id: int,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Desactivar una transición del workflow."""
+    _require_manager(current_user)
+    transition = session.get(WorkflowTransition, transition_id)
+    if not transition or (transition.tenant_id and transition.tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=404, detail="Transición no encontrada")
+    
+    transition.is_active = False
+    session.add(transition)
+    session.commit()
+    return {"message": "Transición desactivada correctamente"}
+
+
+# --- Transition Rules (for UI) ---
+
+@router.get("/transitions/rules", response_model=List[TransitionRuleResponse])
+async def get_transition_rules(
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Obtener todas las reglas de transición con nombres de estados (para el diseñador)."""
+    tenant_id = current_user.tenant_id
+    transitions = session.exec(
+        select(WorkflowTransition).where(
+            WorkflowTransition.tenant_id == tenant_id,
+            WorkflowTransition.is_active == True,
+        )
+    ).all()
+    
+    rules = []
+    for t in transitions:
+        source = session.get(WorkflowState, t.source_state_id)
+        target = session.get(WorkflowState, t.target_state_id)
+        rules.append(TransitionRuleResponse(
+            id=t.id,
+            source_state_id=t.source_state_id,
+            source_state_name=source.name if source else "?",
+            source_state_code=source.code.value if source and hasattr(source.code, 'value') else str(source.code),
+            target_state_id=t.target_state_id,
+            target_state_name=target.name if target else "?",
+            target_state_code=target.code.value if target and hasattr(target.code, 'value') else str(target.code),
+            name=t.name,
+            is_automatic=t.is_automatic,
+            condition_days=t.condition_days,
+            condition_type=t.condition_type,
+            is_active=t.is_active,
+        ))
+    return rules
+
+
+# --- Designer (full workflow data) ---
+
+@router.get("/designer", response_model=WorkflowDesignerResponse)
+async def get_workflow_designer(
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Datos completos del workflow para el diseñador visual."""
+    tenant_id = current_user.tenant_id
+
+    # Obtener nombre del tenant
+    tenant = session.get(Tenant, tenant_id)
+    tenant_name = tenant.name if tenant else f"Tenant #{tenant_id}"
+    
+    states = session.exec(
+        select(WorkflowState).where(
+            WorkflowState.tenant_id == tenant_id,
+        ).order_by(WorkflowState.order)
+    ).all()
+    
+    transitions = session.exec(
+        select(WorkflowTransition).where(
+            WorkflowTransition.tenant_id == tenant_id,
+        )
+    ).all()
+    
+    # Count processes per state
+    state_counts = {}
+    active_processes = session.exec(
+        select(CobroProcess).where(
+            CobroProcess.tenant_id == tenant_id,
+            CobroProcess.status == ProcessStatus.ACTIVE,
+        )
+    ).all()
+    for p in active_processes:
+        state_counts[p.current_state_id] = state_counts.get(p.current_state_id, 0) + 1
+    
+    return WorkflowDesignerResponse(
+        states=[WorkflowStateResponse.model_validate(s) for s in states],
+        transitions=[WorkflowTransitionResponse.model_validate(t) for t in transitions],
+        state_process_counts=state_counts,
+        total_active_processes=len(active_processes),
+        tenant_name=tenant_name,
+    )
+
+
+# --- Seed default workflow ---
+
+DEFAULT_WORKFLOW = [
+    {"code": "CARTERA_CARGADA", "name": "Cartera Cargada", "order": 0, "max_days": 5, "is_final": False},
+    {"code": "OBLIGACION_VALIDADA", "name": "Obligación Validada", "order": 1, "max_days": 3, "is_final": False},
+    {"code": "PENDIENTE_ASIGNACION_RESOLUCION", "name": "Pendiente Asignación Resolución", "order": 2, "max_days": 5, "is_final": False},
+    {"code": "RESOLUCION_RADICADOS_ASIGNADOS", "name": "Resolución/Radicados Asignados", "order": 3, "max_days": 3, "is_final": False},
+    {"code": "DOCUMENTO_NOTIFICACION_GENERADO", "name": "Documento Notificación Generado", "order": 4, "max_days": 2, "is_final": False},
+    {"code": "NOTIFICACION_ENVIADA", "name": "Notificación Enviada", "order": 5, "max_days": 10, "is_final": False},
+    {"code": "ESPERANDO_RESULTADO_NOTIFICACION", "name": "Esperando Resultado Notificación", "order": 6, "max_days": 15, "is_final": False},
+    {"code": "NOTIFICACION_ENTREGADA", "name": "Notificación Entregada", "order": 7, "max_days": 3, "is_final": False},
+    {"code": "NOTIFICACION_DEVUELTA", "name": "Notificación Devuelta", "order": 8, "max_days": 5, "is_final": False},
+    {"code": "NOTIFICACION_WEB_PUBLICADA", "name": "Notificación Web Publicada", "order": 9, "max_days": 10, "is_final": False},
+    {"code": "REINTENTO_NOTIFICACION", "name": "Reintento Notificación", "order": 10, "max_days": 10, "is_final": False},
+    {"code": "ESPERANDO_PAGO_VOLUNTARIO", "name": "Esperando Pago Voluntario", "order": 11, "max_days": 15, "is_final": False},
+    {"code": "COBRO_PERSUASIVO", "name": "Cobro Persuasivo", "order": 12, "max_days": 20, "is_final": False},
+    {"code": "ACUERDO_DE_PAGO", "name": "Acuerdo de Pago", "order": 13, "max_days": 30, "is_final": False},
+    {"code": "SEGUIMIENTO_ACUERDO", "name": "Seguimiento Acuerdo", "order": 14, "max_days": 60, "is_final": False},
+    {"code": "ACUERDO_INCUMPLIDO", "name": "Acuerdo Incumplido", "order": 15, "max_days": 10, "is_final": False},
+    {"code": "COBRO_PREJURIDICO", "name": "Cobro Prejurídico", "order": 16, "max_days": 30, "is_final": False},
+    {"code": "COBRO_COACTIVO", "name": "Cobro Coactivo", "order": 17, "max_days": 60, "is_final": False},
+    {"code": "PAGADO", "name": "Pagado", "order": 18, "max_days": None, "is_final": True},
+    {"code": "ARCHIVADO", "name": "Archivado", "order": 19, "max_days": None, "is_final": True},
+    {"code": "INCOBRABLE", "name": "Incobrable", "order": 20, "max_days": None, "is_final": True},
+]
+
+DEFAULT_TRANSITIONS = [
+    # Flujo principal lineal
+    ("CARTERA_CARGADA", "OBLIGACION_VALIDADA", "Validar obligación"),
+    ("OBLIGACION_VALIDADA", "PENDIENTE_ASIGNACION_RESOLUCION", "Asignar resolución"),
+    ("PENDIENTE_ASIGNACION_RESOLUCION", "RESOLUCION_RADICADOS_ASIGNADOS", "Radicar resolución"),
+    ("RESOLUCION_RADICADOS_ASIGNADOS", "DOCUMENTO_NOTIFICACION_GENERADO", "Generar documento"),
+    ("DOCUMENTO_NOTIFICACION_GENERADO", "NOTIFICACION_ENVIADA", "Enviar notificación"),
+    ("NOTIFICACION_ENVIADA", "ESPERANDO_RESULTADO_NOTIFICACION", "Esperar resultado"),
+    # Resultados de notificación
+    ("ESPERANDO_RESULTADO_NOTIFICACION", "NOTIFICACION_ENTREGADA", "Entregada"),
+    ("ESPERANDO_RESULTADO_NOTIFICACION", "NOTIFICACION_DEVUELTA", "Devuelta"),
+    ("ESPERANDO_RESULTADO_NOTIFICACION", "NOTIFICACION_WEB_PUBLICADA", "Publicar en web"),
+    # Reintentos
+    ("NOTIFICACION_DEVUELTA", "REINTENTO_NOTIFICACION", "Reintentar"),
+    ("REINTENTO_NOTIFICACION", "NOTIFICACION_ENVIADA", "Reenviar notificación"),
+    # Pago y cobro
+    ("NOTIFICACION_ENTREGADA", "ESPERANDO_PAGO_VOLUNTARIO", "Esperar pago"),
+    ("NOTIFICACION_WEB_PUBLICADA", "ESPERANDO_PAGO_VOLUNTARIO", "Esperar pago"),
+    ("ESPERANDO_PAGO_VOLUNTARIO", "COBRO_PERSUASIVO", "Iniciar cobro persuasivo"),
+    ("ESPERANDO_PAGO_VOLUNTARIO", "PAGADO", "Pago voluntario"),
+    # Acuerdo de pago
+    ("COBRO_PERSUASIVO", "ACUERDO_DE_PAGO", "Proponer acuerdo"),
+    ("COBRO_PERSUASIVO", "PAGADO", "Pago en cobro persuasivo"),
+    ("ACUERDO_DE_PAGO", "SEGUIMIENTO_ACUERDO", "Iniciar seguimiento"),
+    ("SEGUIMIENTO_ACUERDO", "PAGADO", "Cumplió acuerdo"),
+    ("SEGUIMIENTO_ACUERDO", "ACUERDO_INCUMPLIDO", "Incumplimiento"),
+    # Escalado
+    ("ACUERDO_INCUMPLIDO", "COBRO_PREJURIDICO", "Escalar a prejurídico"),
+    ("COBRO_PERSUASIVO", "COBRO_PREJURIDICO", "Escalar a prejurídico"),
+    ("COBRO_PREJURIDICO", "COBRO_COACTIVO", "Escalar a coactivo"),
+    ("COBRO_PREJURIDICO", "PAGADO", "Pago en prejurídico"),
+    ("COBRO_COACTIVO", "PAGADO", "Pago en coactivo"),
+    # Estados finales
+    ("COBRO_COACTIVO", "INCOBRABLE", "Declarar incobrable"),
+    ("COBRO_PREJURIDICO", "ARCHIVADO", "Archivar proceso"),
+    # Transiciones automáticas (por tiempo)
+    ("CARTERA_CARGADA", "OBLIGACION_VALIDADA", None),  # auto: 5 días
+    ("NOTIFICACION_ENVIADA", "ESPERANDO_RESULTADO_NOTIFICACION", None),  # auto: 10 días
+]
+
+
+@router.post("/seed")
+async def seed_default_workflow(
+    overwrite: bool = False,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Crear los 21 estados predeterminados y sus transiciones para el tenant actual."""
+    _require_manager(current_user)
+    tenant_id = current_user.tenant_id
+    
+    # Verificar si ya existen estados
+    existing_states = session.exec(
+        select(WorkflowState).where(WorkflowState.tenant_id == tenant_id)
+    ).all()
+    if existing_states and not overwrite:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya existen {len(existing_states)} estados. Use overwrite=true para reiniciar."
+        )
+    
+    # Si overwrite, desactivar estados existentes
+    if overwrite and existing_states:
+        for s in existing_states:
+            s.is_active = False
+            session.add(s)
+        session.flush()
+    
+    # Crear estados
+    code_to_id = {}
+    created_states = 0
+    for state_data in DEFAULT_WORKFLOW:
+        state = WorkflowState(
+            code=WorkflowStateCode(state_data["code"]),
+            name=state_data["name"],
+            order=state_data["order"],
+            max_days=state_data["max_days"],
+            is_final=state_data["is_final"],
+            is_active=True,
+            tenant_id=tenant_id,
+        )
+        session.add(state)
+        session.flush()
+        code_to_id[state_data["code"]] = state.id
+        created_states += 1
+    
+    # Crear transiciones
+    created_transitions = 0
+    auto_transitions = {"CARTERA_CARGADA", "NOTIFICACION_ENVIADA"}
+    for source_code, target_code, name in DEFAULT_TRANSITIONS:
+        if source_code not in code_to_id or target_code not in code_to_id:
+            continue
+        is_auto = source_code in auto_transitions and name is None
+        transition = WorkflowTransition(
+            name=name or f"Auto: {source_code} → {target_code}",
+            source_state_id=code_to_id[source_code],
+            target_state_id=code_to_id[target_code],
+            is_automatic=is_auto,
+            condition_days=5 if source_code == "CARTERA_CARGADA" and is_auto else (10 if source_code == "NOTIFICACION_ENVIADA" and is_auto else None),
+            condition_type="max_days" if is_auto else None,
+            is_active=True,
+            tenant_id=tenant_id,
+        )
+        session.add(transition)
+        created_transitions += 1
+    
+    session.commit()
+    return {
+        "message": f"Workflow creado: {created_states} estados, {created_transitions} transiciones",
+        "states_created": created_states,
+        "transitions_created": created_transitions,
+    }
+
+
+# --- Kanban ---
+
+@router.get("/kanban", response_model=KanbanResponse)
+async def get_kanban_board(
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Obtener datos para el tablero Kanban de procesos."""
+    try:
+        tenant_id = current_user.tenant_id
+        now = datetime.utcnow()
+
+        # Obtener estados activos ordenados
+        states = session.exec(
+            select(WorkflowState).where(
+                WorkflowState.tenant_id == tenant_id,
+                WorkflowState.is_active == True
+            ).order_by(WorkflowState.order)
+        ).all()
+
+        # Obtener transiciones activas del tenant
+        transitions = session.exec(
+            select(WorkflowTransition).where(
+                WorkflowTransition.tenant_id == tenant_id,
+                WorkflowTransition.is_active == True
+            )
+        ).all()
+
+        # Map de source_state_id -> [target_state_ids]
+        transition_map = {}
+        for t in transitions:
+            transition_map.setdefault(t.source_state_id, []).append(t.target_state_id)
+
+        # Obtener procesos activos del tenant
+        processes = session.exec(
+            select(CobroProcess).where(
+                CobroProcess.tenant_id == tenant_id,
+                CobroProcess.status == ProcessStatus.ACTIVE
+            )
+        ).all()
+
+        # Obtener nombres de clientes y montos por proceso
+        client_map = {}
+        amount_map = {}
+        for p in processes:
+            obligations = session.exec(
+                select(Obligation).where(Obligation.process_id == p.id)
+            ).all()
+            total = sum(o.amount or 0 for o in obligations)
+            amount_map[p.id] = total
+            if obligations:
+                client = session.get(Client, obligations[0].client_id)
+                if client:
+                    client_map[p.id] = client.name
+
+        # Construir columnas
+        columns = []
+        total_processes = 0
+        for state in states:
+            state_processes = [p for p in processes if p.current_state_id == state.id]
+            cards = []
+            for p in state_processes:
+                days = (now - (p.state_changed_at or p.created_at)).days
+                cards.append(KanbanCard(
+                    process_id=p.id,
+                    reference=p.reference,
+                    client_name=client_map.get(p.id),
+                    total_amount=amount_map.get(p.id, 0),
+                    days_in_state=days,
+                    max_days=state.max_days,
+                    state_changed_at=p.state_changed_at,
+                    status=p.status.value if hasattr(p.status, 'value') else str(p.status),
+                ))
+
+            columns.append(KanbanColumn(
+                state_id=state.id,
+                state_code=state.code,
+                state_name=state.name,
+                order=state.order,
+                max_days=state.max_days,
+                is_final=state.is_final,
+                count=len(cards),
+                cards=cards,
+                transitions=transition_map.get(state.id, []),
+            ))
+            total_processes += len(cards)
+
+        return KanbanResponse(columns=columns, total_processes=total_processes)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo datos del Kanban: {str(e)}")
+
+
+# --- Bulk Transition ---
+
+class BulkTransitionRequest(BaseModel):
+    process_ids: List[int]
+    target_state_id: int
+    observations: Optional[str] = None
+
+
+class BulkTransitionResponse(BaseModel):
+    updated: int
+    failed: int
+    target_state_name: str
+    errors: List[str] = []
+
+
+@router.post("/bulk-transition", response_model=BulkTransitionResponse)
+async def bulk_transition_processes(
+    payload: BulkTransitionRequest,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """Mover múltiples procesos a un estado destino de forma masiva."""
+    _require_manager(current_user)
+
+    if not payload.process_ids:
+        raise HTTPException(status_code=400, detail="No se enviaron procesos para actualizar")
+
+    # Validar estado destino
+    target_state = session.get(WorkflowState, payload.target_state_id)
+    if not target_state or not target_state.is_active:
+        raise HTTPException(status_code=404, detail="Estado destino no válido o inactivo")
+
+    now = datetime.utcnow()
+    updated = 0
+    failed = 0
+    errors: List[str] = []
+
+    for pid in payload.process_ids:
+        try:
+            process = session.get(CobroProcess, pid)
+            if not process or process.tenant_id != current_user.tenant_id:
+                failed += 1
+                errors.append(f"Proceso {pid}: no encontrado")
+                continue
+
+            previous_state_id = process.current_state_id
+            source_state = session.get(WorkflowState, previous_state_id)
+
+            process.current_state_id = target_state.id
+            process.state_changed_at = now
+            process.updated_at = now
+
+            if target_state.is_final:
+                process.status = ProcessStatus.CLOSED
+
+            session.add(process)
+
+            history = ProcessHistory(
+                tenant_id=current_user.tenant_id,
+                process_id=pid,
+                user_id=current_user.id,
+                previous_state_id=previous_state_id,
+                new_state_id=target_state.id,
+                action="BULK_TRANSITION",
+                description=payload.observations or f"Cambio masivo de {source_state.name if source_state else 'anterior'} a {target_state.name}",
+                extra_data={"observations": payload.observations, "bulk": True} if payload.observations else {"bulk": True},
+            )
+            session.add(history)
+            updated += 1
+
+        except Exception as e:
+            failed += 1
+            errors.append(f"Proceso {pid}: {str(e)}")
+
+    session.commit()
+
+    return BulkTransitionResponse(
+        updated=updated,
+        failed=failed,
+        target_state_name=target_state.name,
+        errors=errors[:20],  # Limitar errores a 20 para no saturar respuesta
+    )
+
+
+# --- Helpers ---
+
+def _require_manager(user: User):
+    """Verificar que el usuario tiene rol OPERATOR o superior."""
+    if user.role not in (UserRole.PLATFORM_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.OPERATOR):
+        raise HTTPException(status_code=403, detail="Se requiere rol OPERATOR o superior para modificar el workflow")

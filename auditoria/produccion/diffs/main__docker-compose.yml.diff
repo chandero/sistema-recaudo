@@ -1,0 +1,27 @@
+--- main/docker-compose.yml
++++ produccion/docker-compose.yml
+@@ -9,13 +9,13 @@
+       - ./backend:/app
+       - /opt/riap/db:/opt/riap/db
+     ports:
+-      - "8001:8000"
++      - "8055:8000"  # Cambiado de 8001 a 8055
+     environment:
+       DB_PATH: /opt/riap/db/cartera.db
+       USE_SQLITE: "True"
+       SECRET_KEY: ${SECRET_KEY:-supersecretkeychangeinproduction1234567890}
+       ALGORITHM: HS256
+-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
++      ACCESS_TOKEN_EXPIRE_MINUTES: 480
+       REDIS_HOST: redis
+       REDIS_PORT: 6379
+       DEBUG: "True"
+@@ -37,7 +37,7 @@
+       dockerfile: Dockerfile
+     container_name: cartera_frontend
+     ports:
+-      - "5173:80"  # Volvemos a la configuración original
++      - "5055:80"  # Cambiado de 5173 a 5055
+     depends_on:
+       - backend
+     networks:

@@ -27,3 +27,8 @@ frontend/dist/
 .idea/
 .vscode/
 .lingma/
+
+# Artefactos generados en servidor y auxiliar
+generados/
+.worktrees/
+auditoria/produccion/copia_servidor/

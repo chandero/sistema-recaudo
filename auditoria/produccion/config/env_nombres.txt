@@ -1,0 +1,17 @@
+# Solo nombres de variable; valores redactados deliberadamente
+# Database Configuration
+DB_USER=<redactado>
+DB_PASSWORD=<redactado>
+DB_NAME=<redactado>
+
+# Security - CHANGE THIS IN PRODUCTION
+SECRET_KEY=<redactado>
+ALGORITHM=<redactado>
+ACCESS_TOKEN_EXPIRE_MINUTES=<redactado>
+
+# Redis
+REDIS_URL=<redactado>
+
+# Application
+ENVIRONMENT=<redactado>
+DEBUG=<redactado>

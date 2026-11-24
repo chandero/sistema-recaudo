@@ -33,6 +33,9 @@ import InputIcon from 'primevue/inputicon';
 import Checkbox from 'primevue/checkbox';
 import Avatar from 'primevue/avatar';
 import Menu from 'primevue/menu';
+import Chart from 'primevue/chart';
+import ProgressBar from 'primevue/progressbar';
+import ProgressSpinner from 'primevue/progressspinner';
 
 import App from './App.vue';
 import router from './router';
@@ -92,6 +95,9 @@ app.component('InputIcon', InputIcon);
 app.component('Checkbox', Checkbox);
 app.component('Avatar', Avatar);
 app.component('Menu', Menu);
+app.component('Chart', Chart);
+app.component('ProgressBar', ProgressBar);
+app.component('ProgressSpinner', ProgressSpinner);
 
 // Manejador global de errores
 app.config.errorHandler = (err, instance, info) => {

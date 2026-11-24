@@ -1,0 +1,17 @@
+--- rama/backend/app/api/v1/api.py
++++ produccion/backend/app/api/v1/api.py
+@@ -1,5 +1,5 @@
+ from fastapi import APIRouter, Depends, HTTPException, status
+-from app.api.v1.endpoints import auth, tenants, clients, obligations, workflows, processes, documents, importer, users
++from app.api.v1.endpoints import auth, tenants, clients, obligations, workflows, processes, documents, importer, users, dashboard, payment_agreements, reports, notifications
+ 
+ api_router = APIRouter()
+ 
+@@ -12,3 +12,7 @@
+ api_router.include_router(processes.router, prefix="/processes", tags=["Processes"])
+ api_router.include_router(documents.router, prefix="/documents", tags=["Documents"])
+ api_router.include_router(importer.router, prefix="/importer", tags=["Importaciones Excel/CSV"])
++api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
++api_router.include_router(payment_agreements.router, prefix="/payment-agreements", tags=["Payment Agreements"])
++api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
++api_router.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])

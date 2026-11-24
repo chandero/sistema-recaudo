@@ -19,6 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Add address column to tenants table
+    op.add_column('tenants', sa.Column('address', sa.String(length=500), nullable=True))
     # Add city column to tenants table
     op.add_column('tenants', sa.Column('city', sa.String(length=100), nullable=True))
     # Add department column to tenants table
@@ -30,3 +32,5 @@ def downgrade() -> None:
     op.drop_column('tenants', 'department')
     # Drop city column from tenants table
     op.drop_column('tenants', 'city')
+    # Drop address column from tenants table
+    op.drop_column('tenants', 'address')

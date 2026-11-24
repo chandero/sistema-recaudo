@@ -11,6 +11,10 @@ from app.models.import_map import ImportMappingTemplate
 from app.models.import_batch import ImportBatch, ImportStatus
 from app.models.user_audit import UserAuditAction, UserAuditLog
 from app.models.user_invitation import UserInvitation
+from app.models.process_config import TenantProcessConfig
+from app.models.process_note import ProcessNote
+from app.models.payment_agreement import PaymentAgreement, AgreementStatus, AgreementInstallment, InstallmentStatus
+from app.models.notification import Notification, NotificationType
 
 __all__ = [
     "Tenant",
@@ -38,4 +42,12 @@ __all__ = [
     "UserAuditAction",
     "UserAuditLog",
     "UserInvitation",
+    "TenantProcessConfig",
+    "ProcessNote",
+    "PaymentAgreement",
+    "AgreementStatus",
+    "AgreementInstallment",
+    "InstallmentStatus",
+    "Notification",
+    "NotificationType",
 ]

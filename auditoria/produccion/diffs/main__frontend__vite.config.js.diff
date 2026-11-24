@@ -1,0 +1,15 @@
+--- main/frontend/vite.config.js
++++ produccion/frontend/vite.config.js
+@@ -22,5 +22,10 @@
+   build: {
+     outDir: 'dist',
+     assetsDir: 'assets'
++  },
++  test: {
++    environment: 'jsdom',
++    globals: true,
++    setupFiles: ['./tests/setup.js']
+   }
+-})
+\ No hay ningún carácter de nueva línea al final del archivo
++})

@@ -1,0 +1,993 @@
+--- rama/frontend/src/views/WorkflowView.vue
++++ produccion/frontend/src/views/WorkflowView.vue
+@@ -1,40 +1,971 @@
+ <template>
+-  <div class="placeholder-view">
+-    <Card class="text-center py-5">
+-      <template #header>
+-        <div class="pt-4">
+-          <i class="pi pi-sitemap text-6xl text-color-secondary"></i>
+-        </div>
++  <div class="workflow-view">
++    <PageHeader
++      title="Tablero Kanban"
++      subtitle="Gestión visual de procesos de cobro por estado"
++    >
++      <template #actions>
++        <Button
++          icon="pi pi-cog"
++          label="Diseñador"
++          severity="help"
++          outlined
++          @click="$router.push('/workflow/disenador')"
++        />
++        <Button
++          icon="pi pi-refresh"
++          label="Actualizar"
++          severity="secondary"
++          outlined
++          @click="loadKanban"
++          :loading="loading"
++        />
+       </template>
+-      <template #title>
+-        Workflow y Kanban
++    </PageHeader>
++
++    <!-- Summary + Search -->
++    <div class="summary-bar">
++      <div class="summary-item">
++        <span class="summary-label">Procesos Activos</span>
++        <strong class="summary-value">{{ totalProcesses }}</strong>
++      </div>
++      <div class="summary-item">
++        <span class="summary-label">Columnas</span>
++        <strong class="summary-value">{{ columns.length }}</strong>
++      </div>
++      <div class="search-box">
++        <span class="p-input-icon-left">
++          <i class="pi pi-search" />
++          <InputText
++            v-model="searchQuery"
++            placeholder="Buscar por referencia, cliente o identificación..."
++            class="w-full"
++          />
++        </span>
++        <Tag v-if="searchQuery" :value="`${searchMatchCount} resultado${searchMatchCount !== 1 ? 's' : ''}`" :severity="searchMatchCount > 0 ? 'success' : 'danger'" rounded />
++        <Button v-if="searchQuery" icon="pi pi-times" text size="small" @click="searchQuery = ''" v-tooltip="'Limpiar búsqueda'" />
++      </div>
++    </div>
++
++    <!-- Bulk Action Bar -->
++    <div v-if="selectedCount > 0" class="bulk-action-bar">
++      <div class="bulk-info">
++        <i class="pi pi-check-circle"></i>
++        <span><strong>{{ selectedCount }}</strong> proceso{{ selectedCount !== 1 ? 's' : '' }} seleccionado{{ selectedCount !== 1 ? 's' : '' }}</span>
++      </div>
++      <div class="bulk-actions">
++        <Button
++          label="Mover a..."
++          icon="pi pi-arrows-h"
++          severity="warning"
++          @click="openBulkDialog"
++        />
++        <Button
++          label="Seleccionar todos"
++          icon="pi pi-check-square"
++          outlined
++          style="color: white; border-color: rgba(255,255,255,0.6)"
++          @click="selectAllVisible"
++        />
++        <Button
++          label="Deseleccionar"
++          icon="pi pi-times"
++          text
++          style="color: white"
++          @click="clearSelection"
++        />
++      </div>
++    </div>
++
++    <!-- Loading -->
++    <div v-if="loading && !columns.length" class="loading-container">
++      <i class="pi pi-spin pi-spinner" style="font-size: 2.5rem"></i>
++      <p>Cargando tablero...</p>
++    </div>
++
++    <!-- Empty -->
++    <div v-else-if="!columns.length" class="empty-container">
++      <i class="pi pi-inbox" style="font-size: 3rem"></i>
++      <p>No hay estados de workflow configurados</p>
++    </div>
++
++    <!-- Kanban Board -->
++    <div v-else class="kanban-board" ref="boardRef">
++      <div
++        v-for="col in columns"
++        :key="col.state_id"
++        class="kanban-column"
++        :class="{ 'is-final': col.is_final, 'drag-over': dragOverStateId === col.state_id }"
++        @dragover.prevent="onDragOver($event, col)"
++        @dragleave="onDragLeave"
++        @drop="onDrop($event, col)"
++      >
++        <div class="column-header">
++          <div class="column-title">
++            <span class="state-name">{{ col.state_name }}</span>
++            <Tag
++              :value="String(searchQuery ? getVisibleCards(col).length : col.count)"
++              :severity="col.is_final ? 'secondary' : 'info'"
++              rounded
++            />
++          </div>
++          <div v-if="col.max_days" class="max-days-badge" :title="`Máximo ${col.max_days} días`">
++            <i class="pi pi-clock"></i>
++            <span>{{ col.max_days }}d</span>
++          </div>
++        </div>
++
++        <div class="column-body">
++          <div
++            v-for="card in getVisibleCards(col)"
++            :key="card.process_id"
++            class="kanban-card"
++            :class="[getCardClass(card), { 'card-highlighted': isCardHighlighted(card), 'card-selected': isSelected(card) }]"
++            draggable="true"
++            @dragstart="onDragStart($event, card, col)"
++            @dragend="onDragEnd"
++            @click="openCardDetail(card)"
++          >
++            <div class="card-header">
++              <Checkbox
++                :modelValue="isSelected(card)"
++                :binary="true"
++                @update:modelValue="toggleCard(card, $event)"
++                @click.stop
++                class="card-checkbox"
++              />
++              <span class="card-reference">{{ card.reference }}</span>
++              <span class="card-days" :class="getDaysClass(card)">
++                {{ card.days_in_state }}d
++              </span>
++            </div>
++            <div class="card-client" v-if="card.client_name">
++              <i class="pi pi-user"></i>
++              <span>{{ card.client_name }}</span>
++            </div>
++            <div class="card-footer">
++              <span class="card-amount">{{ formatCurrency(card.total_amount) }}</span>
++              <div class="card-actions">
++                <Button
++                  v-if="col.transitions.length"
++                  icon="pi pi-arrow-right"
++                  text
++                  size="small"
++                  severity="success"
++                  @click.stop="openTransition(card, col)"
++                  v-tooltip="'Cambiar estado'"
++                />
++              </div>
++            </div>
++          </div>
++
++          <div v-if="!getVisibleCards(col).length" class="column-empty">
++            <span>{{ searchQuery ? 'Sin resultados' : 'Sin procesos' }}</span>
++          </div>
++        </div>
++      </div>
++    </div>
++
++    <!-- Card Detail Dialog -->
++    <Dialog
++      v-model:visible="detailVisible"
++      :style="{ width: '500px' }"
++      :header="`Proceso: ${detailCard?.reference || ''}`"
++      :modal="true"
++    >
++      <div v-if="detailCard" class="card-detail">
++        <div class="detail-grid">
++          <span>Referencia</span>
++          <strong>{{ detailCard.reference }}</strong>
++          <span>Cliente</span>
++          <strong>{{ detailCard.client_name || 'N/A' }}</strong>
++          <span>Estado</span>
++          <Tag :value="detailCardStateName" :severity="getSeverityByCode(detailCardStateCode)" />
++          <span>Días en Estado</span>
++          <strong>
++            {{ detailCard.days_in_state }}
++            <small v-if="detailCard.max_days"> / {{ detailCard.max_days }} máx.</small>
++          </strong>
++          <span>Monto Total</span>
++          <strong>{{ formatCurrency(detailCard.total_amount) }}</strong>
++          <span>Último Cambio</span>
++          <strong>{{ formatDate(detailCard.state_changed_at) }}</strong>
++        </div>
++      </div>
++      <template #footer>
++        <Button label="Cerrar" icon="pi pi-times" text @click="detailVisible = false" />
++        <Button
++          v-if="detailCardTransitions.length"
++          label="Cambiar Estado"
++          icon="pi pi-arrows-h"
++          @click="openTransitionFromDetail"
++        />
+       </template>
+-      <template #content>
+-        <p class="m-0 text-color-secondary">
+-          Esta funcionalidad estará disponible próximamente.
++    </Dialog>
++
++    <!-- Transition Dialog -->
++    <Dialog
++      v-model:visible="transitionVisible"
++      :style="{ width: '480px' }"
++      header="Cambiar Estado"
++      :modal="true"
++    >
++      <div v-if="transitionCard" class="transition-content">
++        <p>
++          <strong>{{ transitionCard.reference }}</strong> —
++          Estado actual: <Tag :value="transitionFromColumnName" severity="info" />
+         </p>
++        <div class="field">
++          <label>Estado Destino</label>
++          <Dropdown
++            v-model="selectedTargetStateId"
++            :options="transitionTargets"
++            optionLabel="name"
++            optionValue="id"
++            placeholder="Seleccione el nuevo estado"
++          />
++        </div>
++        <div class="field">
++          <label>Observaciones</label>
++          <Textarea v-model="transitionObservations" rows="3" placeholder="Motivo del cambio..." />
++        </div>
++      </div>
++      <template #footer>
++        <Button label="Cancelar" icon="pi pi-times" text @click="transitionVisible = false" />
++        <Button
++          label="Ejecutar"
++          icon="pi pi-check"
++          :disabled="!selectedTargetStateId"
++          :loading="transitionLoading"
++          @click="confirmTransition"
++        />
++      </template>
++    </Dialog>
++
++    <!-- Bulk Transition Dialog -->
++    <Dialog
++      v-model:visible="bulkDialogVisible"
++      :style="{ width: '520px' }"
++      header="Cambio Masivo de Estado"
++      :modal="true"
++    >
++      <div class="bulk-dialog-content">
++        <div class="bulk-summary-box">
++          <i class="pi pi-info-circle"></i>
++          <span>Se moverán <strong>{{ selectedCount }}</strong> procesos al estado seleccionado.</span>
++        </div>
++        <div class="field">
++          <label>Estado Destino</label>
++          <Dropdown
++            v-model="bulkTargetStateId"
++            :options="allStates"
++            optionLabel="name"
++            optionValue="id"
++            placeholder="Seleccione el estado destino"
++            class="w-full"
++          />
++        </div>
++        <div class="field">
++          <label>Observaciones</label>
++          <Textarea v-model="bulkObservations" rows="3" placeholder="Motivo del cambio masivo..." />
++        </div>
++      </div>
++      <template #footer>
++        <Button label="Cancelar" icon="pi pi-times" text @click="bulkDialogVisible = false" />
++        <Button
++          label="Ejecutar Cambio Masivo"
++          icon="pi pi-check"
++          severity="warning"
++          :disabled="!bulkTargetStateId"
++          :loading="bulkLoading"
++          @click="executeBulkTransition"
++        />
+       </template>
+-    </Card>
++    </Dialog>
+   </div>
+ </template>
+ 
+ <script setup>
+-// Este componente no necesita envolver todo en Layout ya que el router ya lo hace a través de ProtectedLayout
+-// El Layout ya está siendo usado en App.vue con ProtectedLayout
++import { ref, computed, onMounted } from 'vue';
++import { useToast } from 'primevue/usetoast';
++import PageHeader from '@/components/PageHeader.vue';
++import { workflowService, processService } from '@/services/api';
++import { useErrorHandler } from '@/composables/useErrorHandler';
++
++const toast = useToast();
++const { handleError } = useErrorHandler();
++
++// Board data
++const columns = ref([]);
++const totalProcesses = ref(0);
++const loading = ref(false);
++const boardRef = ref(null);
++
++// Search
++const searchQuery = ref('');
++
++const searchMatchCount = computed(() => {
++  if (!searchQuery.value) return 0;
++  const q = searchQuery.value.toLowerCase();
++  let count = 0;
++  columns.value.forEach(col => {
++    col.cards.forEach(card => {
++      if (cardMatches(card, q)) count++;
++    });
++  });
++  return count;
++});
++
++const cardMatches = (card, q) => {
++  return (card.reference && card.reference.toLowerCase().includes(q)) ||
++         (card.client_name && card.client_name.toLowerCase().includes(q)) ||
++         (card.client_identification && card.client_identification.toLowerCase().includes(q));
++};
++
++const getVisibleCards = (col) => {
++  if (!searchQuery.value) return col.cards;
++  const q = searchQuery.value.toLowerCase();
++  return col.cards.filter(card => cardMatches(card, q));
++};
++
++const isCardHighlighted = (card) => {
++  if (!searchQuery.value) return false;
++  return cardMatches(card, searchQuery.value.toLowerCase());
++};
++
++// Drag state
++const draggedCard = ref(null);
++const dragSourceColumn = ref(null);
++const dragOverStateId = ref(null);
++
++// Bulk selection
++const selectedProcessIds = ref(new Set());
++const bulkDialogVisible = ref(false);
++const bulkTargetStateId = ref(null);
++const bulkObservations = ref('');
++const bulkLoading = ref(false);
++
++const selectedCount = computed(() => selectedProcessIds.value.size);
++
++const allStates = computed(() =>
++  columns.value.map(col => ({ id: col.state_id, name: col.state_name }))
++);
++
++const isSelected = (card) => selectedProcessIds.value.has(card.process_id);
++
++const toggleCard = (card, checked) => {
++  const newSet = new Set(selectedProcessIds.value);
++  if (checked) {
++    newSet.add(card.process_id);
++  } else {
++    newSet.delete(card.process_id);
++  }
++  selectedProcessIds.value = newSet;
++};
++
++const selectAllVisible = () => {
++  const newSet = new Set(selectedProcessIds.value);
++  columns.value.forEach(col => {
++    getVisibleCards(col).forEach(card => newSet.add(card.process_id));
++  });
++  selectedProcessIds.value = newSet;
++};
++
++const clearSelection = () => {
++  selectedProcessIds.value = new Set();
++};
++
++const openBulkDialog = () => {
++  bulkTargetStateId.value = null;
++  bulkObservations.value = '';
++  bulkDialogVisible.value = true;
++};
++
++const executeBulkTransition = async () => {
++  if (!bulkTargetStateId.value || selectedProcessIds.value.size === 0) return;
++  bulkLoading.value = true;
++  try {
++    const ids = Array.from(selectedProcessIds.value);
++    const response = await workflowService.bulkTransition(ids, bulkTargetStateId.value, bulkObservations.value || null);
++    const { updated, failed, target_state_name } = response.data;
++    toast.add({
++      severity: failed > 0 ? 'warn' : 'success',
++      summary: 'Cambio masivo ejecutado',
++      detail: `${updated} procesos movidos a "${target_state_name}"${failed > 0 ? `, ${failed} con error` : ''}`,
++      life: 5000,
++    });
++    bulkDialogVisible.value = false;
++    clearSelection();
++    await loadKanban();
++  } catch (error) {
++    handleError(error, 'Error ejecutando cambio masivo');
++  } finally {
++    bulkLoading.value = false;
++  }
++};
++
++// Detail dialog
++const detailVisible = ref(false);
++const detailCard = ref(null);
++const detailCardColumn = ref(null);
++
++// Transition dialog
++const transitionVisible = ref(false);
++const transitionCard = ref(null);
++const transitionColumn = ref(null);
++const selectedTargetStateId = ref(null);
++const transitionObservations = ref('');
++const transitionLoading = ref(false);
++
++// Computed
++const detailCardStateName = computed(() => detailCardColumn.value?.state_name || '');
++const detailCardStateCode = computed(() => detailCardColumn.value?.state_code || '');
++const detailCardTransitions = computed(() => detailCardColumn.value?.transitions || []);
++const transitionFromColumnName = computed(() => transitionColumn.value?.state_name || '');
++
++const transitionTargets = computed(() => {
++  if (!transitionColumn.value) return [];
++  const targetIds = transitionColumn.value.transitions || [];
++  return columns.value
++    .filter(col => targetIds.includes(col.state_id))
++    .map(col => ({ id: col.state_id, name: col.state_name }));
++});
++
++onMounted(() => {
++  loadKanban();
++});
++
++const loadKanban = async () => {
++  loading.value = true;
++  try {
++    const response = await workflowService.getKanban();
++    const data = response.data;
++    columns.value = data.columns || [];
++    totalProcesses.value = data.total_processes || 0;
++  } catch (error) {
++    handleError(error, 'No se pudo cargar el tablero Kanban');
++  } finally {
++    loading.value = false;
++  }
++};
++
++// Drag & Drop
++const onDragStart = (event, card, column) => {
++  draggedCard.value = card;
++  dragSourceColumn.value = column;
++  event.dataTransfer.effectAllowed = 'move';
++  event.target.classList.add('dragging');
++};
++
++const onDragOver = (event, column) => {
++  if (!draggedCard.value || !dragSourceColumn.value) return;
++  // Only allow drop if there's a valid transition
++  const sourceTransitions = dragSourceColumn.value.transitions || [];
++  if (sourceTransitions.includes(column.state_id) || dragSourceColumn.value.state_id === column.state_id) {
++    dragOverStateId.value = column.state_id;
++    event.dataTransfer.dropEffect = 'move';
++  }
++};
++
++const onDragLeave = () => {
++  dragOverStateId.value = null;
++};
++
++const onDrop = async (event, targetColumn) => {
++  event.preventDefault();
++  dragOverStateId.value = null;
++  const card = draggedCard.value;
++  const sourceCol = dragSourceColumn.value;
++
++  if (!card || !sourceCol || sourceCol.state_id === targetColumn.state_id) {
++    draggedCard.value = null;
++    dragSourceColumn.value = null;
++    return;
++  }
++
++  // Check if transition is valid
++  const validTransitions = sourceCol.transitions || [];
++  if (!validTransitions.includes(targetColumn.state_id)) {
++    toast.add({
++      severity: 'warn',
++      summary: 'Transición no válida',
++      detail: `No se puede mover de "${sourceCol.state_name}" a "${targetColumn.state_name}"`,
++      life: 4000
++    });
++    draggedCard.value = null;
++    dragSourceColumn.value = null;
++    return;
++  }
++
++  // Execute transition
++  try {
++    await processService.transition(card.process_id, targetColumn.state_id, 'Movimiento Kanban');
++    toast.add({
++      severity: 'success',
++      summary: 'Éxito',
++      detail: `Proceso movido a "${targetColumn.state_name}"`,
++      life: 3000
++    });
++    await loadKanban();
++  } catch (error) {
++    handleError(error, 'No se pudo mover el proceso');
++  } finally {
++    draggedCard.value = null;
++    dragSourceColumn.value = null;
++  }
++};
++
++const onDragEnd = (event) => {
++  event.target.classList.remove('dragging');
++  draggedCard.value = null;
++  dragSourceColumn.value = null;
++  dragOverStateId.value = null;
++};
++
++// Detail
++const openCardDetail = (card) => {
++  detailCard.value = card;
++  detailCardColumn.value = columns.value.find(col =>
++    col.cards.some(c => c.process_id === card.process_id)
++  );
++  detailVisible.value = true;
++};
++
++const openTransitionFromDetail = () => {
++  const col = detailCardColumn.value;
++  detailVisible.value = false;
++  if (col && detailCard.value) {
++    openTransition(detailCard.value, col);
++  }
++};
++
++// Transition
++const openTransition = (card, column) => {
++  transitionCard.value = card;
++  transitionColumn.value = column;
++  selectedTargetStateId.value = null;
++  transitionObservations.value = '';
++  transitionVisible.value = true;
++};
++
++const confirmTransition = async () => {
++  if (!selectedTargetStateId.value || !transitionCard.value) return;
++  transitionLoading.value = true;
++  try {
++    const targetName = transitionTargets.value.find(t => t.id === selectedTargetStateId.value)?.name || '';
++    await processService.transition(
++      transitionCard.value.process_id,
++      selectedTargetStateId.value,
++      transitionObservations.value || `Movimiento desde Kanban`
++    );
++    toast.add({
++      severity: 'success',
++      summary: 'Éxito',
++      detail: `Estado cambiado a ${targetName}`,
++      life: 3000
++    });
++    transitionVisible.value = false;
++    await loadKanban();
++  } catch (error) {
++    handleError(error, 'No se pudo ejecutar la transición');
++  } finally {
++    transitionLoading.value = false;
++  }
++};
++
++// Helpers
++const getCardClass = (card) => {
++  if (!card.max_days) return '';
++  const ratio = card.days_in_state / card.max_days;
++  if (ratio >= 1) return 'card-expired';
++  if (ratio >= 0.75) return 'card-warning';
++  return '';
++};
++
++const getDaysClass = (card) => {
++  if (!card.max_days) return 'days-neutral';
++  const ratio = card.days_in_state / card.max_days;
++  if (ratio >= 1) return 'days-expired';
++  if (ratio >= 0.75) return 'days-warning';
++  return 'days-ok';
++};
++
++const getSeverityByCode = (code) => {
++  if (code.includes('PAGADO')) return 'success';
++  if (code.includes('INCOBRABLE') || code.includes('INCUMPLIDO')) return 'danger';
++  if (code.includes('ARCHIVADO')) return 'secondary';
++  if (code.includes('COBRO') || code.includes('NOTIFICACION')) return 'warning';
++  return 'info';
++};
++
++const formatCurrency = (amount) => {
++  if (!amount && amount !== 0) return '-';
++  return new Intl.NumberFormat('es-CO', {
++    style: 'currency', currency: 'COP', minimumFractionDigits: 0
++  }).format(amount);
++};
++
++const formatDate = (dateString) => {
++  if (!dateString) return '-';
++  return new Date(dateString).toLocaleDateString('es-CO', {
++    year: 'numeric', month: 'short', day: 'numeric'
++  });
++};
+ </script>
+ 
+ <style scoped>
+-.placeholder-view {
++.workflow-view {
+   padding: 2rem;
+   display: flex;
+-  justify-content: center;
++  flex-direction: column;
++  height: calc(100vh - 4rem);
++}
++
++.summary-bar {
++  display: flex;
++  gap: 1rem;
++  margin-bottom: 1rem;
+   align-items: center;
+-  min-height: 60vh;
++  flex-wrap: wrap;
+ }
+ 
+-.text-center {
+-  text-align: center;
++.search-box {
++  display: flex;
++  align-items: center;
++  gap: 0.5rem;
++  flex: 1;
++  min-width: 280px;
+   max-width: 500px;
++}
++
++.search-box .p-input-icon-left {
++  flex: 1;
++  position: relative;
++}
++
++.search-box .p-input-icon-left i {
++  position: absolute;
++  left: 0.75rem;
++  top: 50%;
++  transform: translateY(-50%);
++  z-index: 1;
++}
++
++.search-box .p-input-icon-left input {
++  padding-left: 2.5rem;
+   width: 100%;
+ }
++
++.card-highlighted {
++  border-color: var(--primary-color, #3b82f6) !important;
++  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
++  animation: card-pulse 1.5s ease-in-out infinite;
++}
++
++@keyframes card-pulse {
++  0%, 100% { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
++  50% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
++}
++
++.summary-item {
++  background: var(--surface-card);
++  border: 1px solid var(--surface-border);
++  border-radius: 8px;
++  padding: 0.875rem 1rem;
++  min-width: 150px;
++}
++
++.summary-label {
++  display: block;
++  color: #6b7280;
++  font-size: 0.875rem;
++  margin-bottom: 0.25rem;
++}
++
++.summary-value {
++  color: var(--text-color);
++  font-size: 1.4rem;
++  line-height: 1;
++}
++
++.loading-container, .empty-container {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  flex: 1;
++  color: var(--text-color-secondary);
++  gap: 1rem;
++}
++
++/* Kanban Board */
++.kanban-board {
++  display: flex;
++  gap: 1rem;
++  overflow-x: auto;
++  flex: 1;
++  padding-bottom: 1rem;
++  align-items: flex-start;
++}
++
++.kanban-column {
++  min-width: 280px;
++  max-width: 300px;
++  background: var(--surface-card);
++  border-radius: 10px;
++  border: 2px solid var(--surface-border);
++  display: flex;
++  flex-direction: column;
++  flex-shrink: 0;
++  transition: border-color 0.2s;
++}
++
++.kanban-column.is-final {
++  opacity: 0.7;
++}
++
++.kanban-column.drag-over {
++  border-color: var(--primary-color, #3b82f6);
++  background: color-mix(in srgb, var(--primary-color, #3b82f6) 5%, var(--surface-card));
++}
++
++.column-header {
++  padding: 0.875rem 1rem;
++  border-bottom: 1px solid var(--surface-border);
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++}
++
++.column-title {
++  display: flex;
++  align-items: center;
++  gap: 0.5rem;
++}
++
++.state-name {
++  font-weight: 600;
++  font-size: 0.85rem;
++  color: var(--text-color);
++}
++
++.max-days-badge {
++  display: flex;
++  align-items: center;
++  gap: 0.25rem;
++  font-size: 0.7rem;
++  color: #6b7280;
++  background: var(--surface-section);
++  padding: 2px 8px;
++  border-radius: 10px;
++}
++
++.column-body {
++  padding: 0.5rem;
++  display: flex;
++  flex-direction: column;
++  gap: 0.5rem;
++  max-height: 60vh;
++  overflow-y: auto;
++}
++
++/* Cards */
++.kanban-card {
++  background: var(--surface-overlay);
++  border: 1px solid var(--surface-border);
++  border-radius: 8px;
++  padding: 0.75rem;
++  cursor: pointer;
++  transition: box-shadow 0.2s, transform 0.15s;
++}
++
++.kanban-card:hover {
++  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
++}
++
++.kanban-card.dragging {
++  opacity: 0.5;
++  transform: rotate(2deg);
++}
++
++.kanban-card.card-warning {
++  border-left: 3px solid #f59e0b;
++}
++
++.kanban-card.card-expired {
++  border-left: 3px solid #ef4444;
++}
++
++.card-header {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  margin-bottom: 0.4rem;
++}
++
++.card-reference {
++  font-weight: 600;
++  font-size: 0.85rem;
++  color: var(--primary-color, #3b82f6);
++}
++
++.card-days {
++  font-size: 0.7rem;
++  font-weight: 600;
++  padding: 1px 6px;
++  border-radius: 8px;
++}
++
++.days-ok { background: #dcfce7; color: #166534; }
++.days-warning { background: #fef9c3; color: #854d0e; }
++.days-expired { background: #fee2e2; color: #991b1b; }
++.days-neutral { background: var(--surface-section); color: #6b7280; }
++
++.card-client {
++  display: flex;
++  align-items: center;
++  gap: 0.35rem;
++  font-size: 0.78rem;
++  color: var(--text-color-secondary);
++  margin-bottom: 0.4rem;
++  overflow: hidden;
++}
++
++.card-client span {
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.card-client i {
++  font-size: 0.7rem;
++  flex-shrink: 0;
++}
++
++.card-footer {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++}
++
++.card-amount {
++  font-weight: 600;
++  font-size: 0.8rem;
++  color: var(--text-color);
++}
++
++.card-actions {
++  display: flex;
++  gap: 0.25rem;
++}
++
++.column-empty {
++  display: flex;
++  justify-content: center;
++  padding: 1.5rem;
++  color: var(--text-color-secondary);
++  font-size: 0.85rem;
++  font-style: italic;
++}
++
++/* Bulk Action Bar */
++.bulk-action-bar {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  background: var(--primary-color, #3b82f6);
++  color: white;
++  padding: 0.75rem 1.25rem;
++  border-radius: 10px;
++  margin-bottom: 1rem;
++  gap: 1rem;
++  flex-wrap: wrap;
++}
++
++.bulk-info {
++  display: flex;
++  align-items: center;
++  gap: 0.5rem;
++  font-size: 0.9rem;
++}
++
++.bulk-info i {
++  font-size: 1.1rem;
++}
++
++.bulk-actions {
++  display: flex;
++  gap: 0.5rem;
++  flex-wrap: wrap;
++}
++
++/* Card Selection */
++.card-selected {
++  border-color: var(--primary-color, #3b82f6) !important;
++  background: color-mix(in srgb, var(--primary-color, #3b82f6) 8%, var(--surface-overlay)) !important;
++  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
++}
++
++.card-checkbox {
++  flex-shrink: 0;
++}
++
++.card-checkbox ::v-deep(.p-checkbox-box) {
++  width: 1.1rem;
++  height: 1.1rem;
++}
++
++/* Bulk Dialog */
++.bulk-summary-box {
++  display: flex;
++  align-items: center;
++  gap: 0.5rem;
++  background: var(--surface-section);
++  padding: 0.75rem 1rem;
++  border-radius: 8px;
++  margin-bottom: 1rem;
++  font-size: 0.9rem;
++}
++
++.bulk-summary-box i {
++  color: var(--primary-color, #3b82f6);
++  font-size: 1.1rem;
++}
++
++/* Detail dialog */
++.card-detail .detail-grid {
++  display: grid;
++  grid-template-columns: 140px 1fr;
++  gap: 0.6rem 1rem;
++  align-items: center;
++}
++
++.detail-grid span {
++  color: #6b7280;
++  font-size: 0.875rem;
++}
++
++/* Transition dialog */
++.transition-content p {
++  margin-bottom: 1rem;
++}
++
++.field {
++  margin-bottom: 1rem;
++}
++
++.field label {
++  display: block;
++  margin-bottom: 0.5rem;
++  font-weight: 500;
++}
++
++@media (max-width: 768px) {
++  .workflow-view {
++    padding: 1rem;
++  }
++  .kanban-column {
++    min-width: 250px;
++  }
++}
+ </style>

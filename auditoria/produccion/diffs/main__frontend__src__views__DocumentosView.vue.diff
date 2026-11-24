@@ -1,0 +1,78 @@
+--- main/frontend/src/views/DocumentosView.vue
++++ produccion/frontend/src/views/DocumentosView.vue
+@@ -1,4 +1,4 @@
+-de <template>
++<template>
+   <div class="documentos">
+     <PageHeader 
+       title="Gestión de Documentos" 
+@@ -778,7 +778,8 @@
+ const statuses = ref([
+   { label: 'Activo', value: 'active' },
+   { label: 'Inactivo', value: 'inactive' },
+-  { label: 'Archivado', value: 'archived' }
++  { label: 'Archivado', value: 'archived' },
++  { label: 'Enviado', value: 'sent' }
+ ]);
+ 
+ // Define sample clients
+@@ -793,18 +794,26 @@
+   loadTemplates();
+ });
+ 
+-const loadDocuments = () => {
+-  // Simulate API call
+-  setTimeout(() => {
+-    documents.value = [
+-      { id: 1, name: 'Contrato Servicio Público', type: 'contract', clientName: 'Juan Pérez', dateCreated: '2023-05-15', status: 'active' },
+-      { id: 2, name: 'Notificación de Cobro', type: 'notification', clientName: 'María García', dateCreated: '2023-06-20', status: 'active' },
+-      { id: 3, name: 'Acuerdo de Pago', type: 'payment_agreement', clientName: 'Carlos López', dateCreated: '2023-07-10', status: 'archived' },
+-      { id: 4, name: 'Resolución Final', type: 'resolution', clientName: 'Ana Rodríguez', dateCreated: '2023-04-05', status: 'inactive' },
+-      { id: 5, name: 'Documento Adjunto', type: 'other', clientName: 'Luis Martínez', dateCreated: '2023-08-12', status: 'active' }
+-    ];
++const loadDocuments = async () => {
++  loading.value = true;
++  try {
++    const response = await documentService.getGeneratedDocuments();
++    documents.value = response.data.map(doc => ({
++      id: doc.id,
++      name: doc.filename,
++      type: doc.document_type,
++      clientName: doc.client_id ? `Cliente #${doc.client_id}` : '-',
++      dateCreated: doc.created_at ? new Date(doc.created_at).toISOString().split('T')[0] : '-',
++      status: doc.is_sent ? 'sent' : 'active',
++      file_size: doc.file_size,
++      process_id: doc.process_id,
++    }));
++  } catch (error) {
++    console.error('Error al cargar los documentos:', error);
++    documents.value = [];
++  } finally {
+     loading.value = false;
+-  }, 800);
++  }
+ };
+ 
+ const loadTemplates = async () => {
+@@ -855,12 +864,7 @@
+     console.log('Templates finales:', templates.value);
+   } catch (error) {
+     console.error('Error al cargar las plantillas:', error);
+-    // Datos de ejemplo en caso de error
+-    templates.value = [
+-      { id: 1, name: 'Plantilla de Notificación', code: 'NOTIF-001', type: 'notification_template', description: 'Plantilla estándar para notificaciones' },
+-      { id: 2, name: 'Plantilla de Acuerdo de Pago', code: 'PAGO-001', type: 'payment_agreement_template', description: 'Plantilla para acuerdos de pago' },
+-      { id: 3, name: 'Plantilla de Contrato', code: 'CONTR-001', type: 'contract_template', description: 'Plantilla de contrato estándar' }
+-    ];
++    templates.value = [];
+   } finally {
+     templatesLoading.value = false;
+   }
+@@ -1032,6 +1036,7 @@
+     case 'active': return 'success';
+     case 'inactive': return 'secondary';
+     case 'archived': return 'info';
++    case 'sent': return 'info';
+     default: return 'info';
+   }
+ };

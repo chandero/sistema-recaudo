@@ -18,6 +18,10 @@ const ImportarView = () => import('@/views/ImportarView.vue');
 const AdminView = () => import('@/views/AdminView.vue');
 const UsuariosView = () => import('@/views/UsuariosView.vue');
 const AceptarInvitacionView = () => import('@/views/AceptarInvitacionView.vue');
+const ExpedienteView = () => import('@/views/ExpedienteView.vue');
+const AcuerdosView = () => import('@/views/AcuerdosView.vue');
+const ReportesView = () => import('@/views/ReportesView.vue');
+const WorkflowDesignerView = () => import('@/views/WorkflowDesignerView.vue');
 
 // Guard para rutas protegidas
 const requireAuth = async (to, from, next) => {
@@ -88,9 +92,29 @@ const router = createRouter({
           component: ProcesosView
         },
         {
+          path: 'procesos/:id/expediente',
+          name: 'Expediente',
+          component: ExpedienteView
+        },
+        {
           path: 'workflow',
           name: 'Workflow',
           component: WorkflowView
+        },
+        {
+          path: 'workflow/disenador',
+          name: 'WorkflowDesigner',
+          component: WorkflowDesignerView,
+        },
+        {
+          path: 'acuerdos',
+          name: 'Acuerdos',
+          component: AcuerdosView
+        },
+        {
+          path: 'reportes',
+          name: 'Reportes',
+          component: ReportesView
         },
         {
           path: 'resoluciones',

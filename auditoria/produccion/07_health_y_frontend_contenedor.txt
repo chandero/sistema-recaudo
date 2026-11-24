@@ -1,0 +1,16 @@
+== /health del backend ==
+{"status":"healthy"}
+
+== index.html DENTRO del contenedor de frontend (no tiene bind mount) ==
+-rw-r--r--    1 root     root          1359 Aug 27 19:12 /usr/share/nginx/html/index.html
+/assets/index-C-vhG3i0.js
+/assets/index-CUMNJegx.css
+
+== index.html EN DISCO /opt/cyberrit/frontend/dist ==
+/assets/index-CUMNJegx.css
+/assets/index-C-vhG3i0.js
+
+== assets dentro del contenedor ==
+56
+== assets en disco ==
+56

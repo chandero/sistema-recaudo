@@ -1,0 +1,86 @@
+rutas declaradas en produccion: 84
+
+[main] rutas declaradas localmente: 44
+  solo en produccion (42):
+    /
+    /api/v1/auth/logout
+    /api/v1/auth/switch-tenant
+    /api/v1/dashboard/stats
+    /api/v1/documents/export/excel
+    /api/v1/notifications/notifications
+    /api/v1/notifications/notifications/count
+    /api/v1/notifications/notifications/read-all
+    /api/v1/notifications/notifications/{notification_id}/read
+    /api/v1/notifications/search
+    /api/v1/payment-agreements/
+    /api/v1/payment-agreements/{agreement_id}
+    /api/v1/payment-agreements/{agreement_id}/accept
+    /api/v1/payment-agreements/{agreement_id}/cancel
+    /api/v1/payment-agreements/{agreement_id}/installments/{installment_id}/pay
+    /api/v1/processes/stats
+    /api/v1/processes/{process_id}/detail
+    /api/v1/processes/{process_id}/documents
+    /api/v1/processes/{process_id}/expedient
+    /api/v1/processes/{process_id}/notes
+    /api/v1/processes/{process_id}/timeline
+    /api/v1/processes/{process_id}/transition
+    /api/v1/reports/aging
+    /api/v1/reports/export/processes-excel
+    /api/v1/reports/operator/{user_id}
+    /api/v1/reports/performance
+    /api/v1/users/
+    /api/v1/users/audit
+    /api/v1/users/invitations
+    /api/v1/users/invitations/accept
+    /api/v1/users/{user_id}
+    /api/v1/users/{user_id}/reset-password
+    /api/v1/users/{user_id}/status
+    /api/v1/users/{user_id}/tenants
+    /api/v1/users/{user_id}/tenants/{tenant_id}
+    /api/v1/workflows/bulk-transition
+    /api/v1/workflows/designer
+    /api/v1/workflows/kanban
+    /api/v1/workflows/seed
+    /api/v1/workflows/transitions/rules
+    /api/v1/workflows/transitions/{transition_id}
+    /health
+  solo en la referencia local (2):
+    /api/v1/auth/users
+    /api/v1/auth/users/{}
+
+[rama] rutas declaradas localmente: 51
+  solo en produccion (33):
+    /
+    /api/v1/auth/switch-tenant
+    /api/v1/dashboard/stats
+    /api/v1/notifications/notifications
+    /api/v1/notifications/notifications/count
+    /api/v1/notifications/notifications/read-all
+    /api/v1/notifications/notifications/{notification_id}/read
+    /api/v1/notifications/search
+    /api/v1/payment-agreements/
+    /api/v1/payment-agreements/{agreement_id}
+    /api/v1/payment-agreements/{agreement_id}/accept
+    /api/v1/payment-agreements/{agreement_id}/cancel
+    /api/v1/payment-agreements/{agreement_id}/installments/{installment_id}/pay
+    /api/v1/processes/stats
+    /api/v1/processes/{process_id}/detail
+    /api/v1/processes/{process_id}/documents
+    /api/v1/processes/{process_id}/expedient
+    /api/v1/processes/{process_id}/notes
+    /api/v1/processes/{process_id}/timeline
+    /api/v1/processes/{process_id}/transition
+    /api/v1/reports/aging
+    /api/v1/reports/export/processes-excel
+    /api/v1/reports/operator/{user_id}
+    /api/v1/reports/performance
+    /api/v1/users/{user_id}/tenants
+    /api/v1/users/{user_id}/tenants/{tenant_id}
+    /api/v1/workflows/bulk-transition
+    /api/v1/workflows/designer
+    /api/v1/workflows/kanban
+    /api/v1/workflows/seed
+    /api/v1/workflows/transitions/rules
+    /api/v1/workflows/transitions/{transition_id}
+    /health
+  solo en la referencia local (0):

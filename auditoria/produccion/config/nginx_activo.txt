@@ -1,0 +1,398 @@
+== sites-enabled ==
+total 8
+drwxr-xr-x 2 root root 4096 oct  6 08:16 .
+drwxr-xr-x 9 root root 4096 nov  1 06:33 ..
+lrwxrwxrwx 1 root root   35 sep  1 14:33 cyberrit -> /etc/nginx/sites-available/cyberrit
+lrwxrwxrwx 1 root root   59 oct  6 08:11 cybersiapcontroller.tiksgroup.co -> /etc/nginx/sites-available/cybersiapcontroller.tiksgroup.co
+lrwxrwxrwx 1 root root   34 oct 27  2023 default -> /etc/nginx/sites-available/default
+lrwxrwxrwx 1 root root   45 feb  4  2025 giron.tiksgroup.co -> /etc/nginx/sites-available/giron.tiksgroup.co
+== conf.d ==
+total 16
+drwxr-xr-x 2 root root 4096 nov 17 15:02 .
+drwxr-xr-x 9 root root 4096 nov  1 06:33 ..
+-rw-r--r-- 1 root root 2891 nov 17 12:36 mirror-mobile.maps.conf.bak_20261117_150127
+-rw-r--r-- 1 root root 2891 nov 17 12:36 mirror-mobile.maps.conf.bak_20261117_150156
+===== /etc/nginx/sites-enabled/cyberrit =====
+upstream backend {
+    server 127.0.0.1:8055;  # Puerto actualizado del backend
+}
+upstream frontend {
+    server 127.0.0.1:5055;  # Puerto actualizado del frontend
+}
+server {
+    server_name giron.cyberrit.tiksgroup.co;
+    # Aumentar el límite de tamaño de cuerpo para uploads
+    client_max_body_size 100M;
+    
+    # API Backend - Ruta crítica para que funcione el sistema
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Headers para CORS
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type, Authorization";
+        
+        # Manejar solicitudes CORS preflight
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin *;
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Content-Type, Authorization";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 200;
+        }
+        
+        # Configuración adicional para manejar APIs
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 1800s;
+        proxy_read_timeout 1800s;
+    }
+    
+    # WebSockets - Para tiempo real
+    location /ws {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # Archivos estáticos del backend
+    location /static/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # Frontend - SPA (Single Page Application)
+    location / {
+        proxy_pass http://frontend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Configuración para SPA routing
+        proxy_intercept_errors on;
+        error_page 404 = @fallback;
+    }
+    
+    # Fallback para rutas SPA - permite navegación interna en la aplicación
+    location @fallback {
+        proxy_pass http://frontend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # Health check
+    location /health {
+        return 200 "CyberRIT OK";
+        add_header Content-Type text/plain;
+        access_log off;
+    }
+    # SSL Configuration (Let's Encrypt)
+    listen 443 ssl http2; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/giron.cyberrit.tiksgroup.co-0001/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/giron.cyberrit.tiksgroup.co-0001/privkey.pem; # managed by Certbot
+    
+    # Security headers
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+}
+server {
+    if ($host = giron.cyberrit.tiksgroup.co) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+    listen 80;
+    server_name giron.cyberrit.tiksgroup.co;
+    return 404; # managed by Certbot
+}
+===== /etc/nginx/sites-enabled/cybersiapcontroller.tiksgroup.co =====
+server {
+	server_name cybersiapcontroller.tiksgroup.co;
+
+	root /var/www/cybersiap_controller/dist/spa;
+        index index.html;
+
+        client_max_body_size 100M;
+
+	location / {
+		try_files $uri $uri/ =404;
+	}
+
+        location /api/ {
+           proxy_http_version 1.1;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_pass http://127.0.0.1:6010/api/;
+        }
+
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/cybersiapcontroller.tiksgroup.co/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/cybersiapcontroller.tiksgroup.co/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+server {
+    if ($host = cybersiapcontroller.tiksgroup.co) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+	server_name cybersiapcontroller.tiksgroup.co;
+
+
+    listen 80;
+    return 404; # managed by Certbot
+
+
+}===== /etc/nginx/sites-enabled/default =====
+##
+# You should look at the following URL's in order to grasp a solid understanding
+# of Nginx configuration files in order to fully unleash the power of Nginx.
+# https://www.nginx.com/resources/wiki/start/
+# https://www.nginx.com/resources/wiki/start/topics/tutorials/config_pitfalls/
+# https://wiki.debian.org/Nginx/DirectoryStructure
+#
+# In most cases, administrators will remove this file from sites-enabled/ and
+# leave it as reference inside of sites-available where it will continue to be
+# updated by the nginx packaging team.
+#
+# This file will automatically load configuration files provided by other
+# applications, such as Drupal or Wordpress. These applications will be made
+# available underneath a path with that package name, such as /drupal8.
+#
+# Please see /usr/share/doc/nginx-doc/examples/ for more detailed examples.
+##
+
+# Default server configuration
+#
+server {
+	listen 80 default_server;
+	listen [::]:80 default_server;
+
+	# SSL configuration
+	#
+	# listen 443 ssl default_server;
+	# listen [::]:443 ssl default_server;
+	#
+	# Note: You should disable gzip for SSL traffic.
+	# See: https://bugs.debian.org/773332
+	#
+	# Read up on ssl_ciphers to ensure a secure configuration.
+	# See: https://bugs.debian.org/765782
+	#
+	# Self signed certs generated by the ssl-cert package
+	# Don't use them in a production server!
+	#
+	# include snippets/snakeoil.conf;
+
+	root /var/www/html;
+
+	# Add index.php to the list if you are using PHP
+	index index.html index.htm index.nginx-debian.html;
+
+	server_name _;
+
+	location / {
+		# First attempt to serve request as file, then
+		# as directory, then fall back to displaying a 404.
+		try_files $uri $uri/ =404;
+	}
+
+	# pass PHP scripts to FastCGI server
+	#
+	#location ~ \.php$ {
+	#	include snippets/fastcgi-php.conf;
+	#
+	#	# With php-fpm (or other unix sockets):
+	#	fastcgi_pass unix:/run/php/php7.4-fpm.sock;
+	#	# With php-cgi (or other tcp sockets):
+	#	fastcgi_pass 127.0.0.1:9000;
+	#}
+
+	# deny access to .htaccess files, if Apache's document root
+	# concurs with nginx's one
+	#
+	#location ~ /\.ht {
+	#	deny all;
+	#}
+}
+
+
+# Virtual Host configuration for example.com
+#
+# You can move that to a different file under sites-available/ and symlink that
+# to sites-enabled/ to enable it.
+#
+#server {
+#	listen 80;
+#	listen [::]:80;
+#
+#	server_name example.com;
+#
+#	root /var/www/example.com;
+#	index index.html;
+#
+#	location / {
+#		try_files $uri $uri/ =404;
+#	}
+#}
+===== /etc/nginx/sites-enabled/giron.tiksgroup.co =====
+server {
+	server_name giron.tiksgroup.co;
+	include /etc/nginx/snippets/mirror-mobile.conf;
+
+	root /var/www/cybersiapv2/frontend/dist;
+	index index.html;
+
+        client_max_body_size 100M;
+
+        proxy_read_timeout 7200s;
+        proxy_connect_timeout 7200s;
+        proxy_send_timeout 7200s;
+
+	location / {
+		try_files $uri $uri/ /index.html;
+	}
+
+        location /widget {
+                alias /var/www/siap_widget/dist;
+        }
+
+        # ===== Packs de mapa offline (los baja la app; alias estatico) =====
+        # Los publica tiles/provision_tiles.sh, que deja el .mbtiles y su estilo aqui
+        # y rellena sha256/sizeBytes en manifest.json. La app verifica el sha256 al
+        # terminar la descarga, asi que este location debe servir el archivo BIT-for-
+        # BIT: nada de gzip (comprimir un .mbtiles ya gzip rompe la suma y, peor, el
+        # sqlite del telefono queda ilegible).
+        #
+        # Nginx ya responde Accept-Ranges y soporta `Range:` para archivos estaticos;
+        # es lo que permite reanudar una descarga cortada en campo. Si alguna vez se
+        # ponen detras un proxy con cacheo de peticiones parciales, hay que revisar
+        # que siga devolviendo 206 y no 200 con el archivo entero.
+        location /tiles/packs/ {
+                alias /opt/tiles/data/packs/;
+                gzip off;
+                types { application/json json; }
+                default_type application/octet-stream;
+                add_header Access-Control-Allow-Origin * always;
+                # La URL del pack NO lleva version (es siempre /tiles/packs/giron.mbtiles);
+                # re-publicar un pack reemplaza el archivo en la misma ruta. Por eso el
+                # cache tiene que expirar: con max-age largo el telefono seguiria
+                # bajando el binario viejo mientras el manifiesto ya anuncia el nuevo
+                # sha256, y la verificacion de integridad fallaria siempre. 1 h es
+                # suficiente para no partir el campo y no chocar con una publicacion.
+                add_header Cache-Control "public, max-age=3600";
+                expires 1h;
+        }
+
+        # ===== Tiles vectoriales OSM (TileServer GL local) =====
+        location = /vector-style.json {
+                alias /opt/tiles/data/vector-style.json;
+                add_header Access-Control-Allow-Origin * always;
+                types { } default_type application/json;
+        }
+
+        location /tiles/ {
+                proxy_pass http://127.0.0.1:8080/;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                add_header Access-Control-Allow-Origin *;
+                expires 7d;
+                add_header Cache-Control "public";
+        }
+
+        location /api/ {
+           proxy_http_version 1.1;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_pass http://127.0.0.1:9095/api/;
+        }
+
+	# ===== WEBSOCKET CONFIGURATION =====
+        # IMPORTANTE: Debe ir ANTES de la configuración /pai/ general
+        location /pai/ucap/ws/ {
+           proxy_pass http://127.0.0.1:9096;
+           
+           # Headers esenciales para WebSocket
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+           
+           # Headers adicionales
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           
+           # Timeouts para WebSocket (24 horas)
+           proxy_read_timeout 86400s;
+           proxy_send_timeout 86400s;
+           proxy_connect_timeout 60s;
+           
+           # Deshabilitar buffering
+           proxy_buffering off;
+           
+           # Permitir chunks
+           chunked_transfer_encoding on;
+        }
+   
+        location /pai/ {
+           include /etc/nginx/snippets/mirror-mobile-mirror.conf;
+           proxy_http_version 1.1;
+           proxy_read_timeout 14400s;
+           proxy_connect_timeout 14400s;
+           proxy_send_timeout 14400s;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_pass http://127.0.0.1:9096/pai/;
+        }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/giron.tiksgroup.co/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/giron.tiksgroup.co/privkey.pem; # managed by Certbot
+    #include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    #ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+
+
+
+server {
+    if ($host = giron.tiksgroup.co) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+	server_name giron.tiksgroup.co;
+
+
+    listen 80 ;
+    return 404; # managed by Certbot
+
+
+}
+== server_name declarados ==

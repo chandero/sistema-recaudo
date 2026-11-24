@@ -5,6 +5,8 @@ Este servicio se encarga de la generación de documentos a partir de plantillas.
 import os
 import re
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Any
 from docxtpl import DocxTemplate
@@ -160,25 +162,54 @@ class DocumentGenerationService:
     @staticmethod
     def convert_to_pdf(docx_path: str, pdf_path: str):
         """
-        Convierte un archivo DOCX a PDF.
+        Convierte un archivo DOCX a PDF usando LibreOffice headless.
         
         Args:
             docx_path: Ruta al archivo DOCX
             pdf_path: Ruta donde guardar el archivo PDF
         """
         try:
-            # Para la conversión a PDF, en un entorno real se usaría una biblioteca como python-docx2pdf
-            # o se enviaría a un servicio externo. Por simplicidad, aquí solo copiamos el archivo
-            # como si fuera una conversión simulada.
-            
-            # En un entorno real, se usaría algo como:
-            # from docx2pdf import convert
-            # convert(docx_path, pdf_path.replace('.pdf', '.temp.docx'))
-            
-            # Por ahora, simplemente creamos un archivo PDF vacío como placeholder
-            # para que el sistema funcione mientras se implementa la verdadera conversión
-            with open(pdf_path, 'w') as f:
-                f.write(f"PDF conversion placeholder for {docx_path}")
+            docx_abs = os.path.abspath(docx_path)
+            pdf_abs = os.path.abspath(pdf_path)
+            output_dir = os.path.dirname(pdf_abs)
+            expected_output = os.path.join(
+                output_dir,
+                os.path.splitext(os.path.basename(docx_abs))[0] + '.pdf'
+            )
+
+            result = subprocess.run(
+                [
+                    'libreoffice',
+                    '--headless',
+                    '--convert-to', 'pdf',
+                    '--outdir', output_dir,
+                    docx_abs,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if result.returncode != 0:
+                raise Exception(
+                    f"LibreOffice falló (código {result.returncode}): {result.stderr.strip()}"
+                )
+
+            # Si LibreOffice generó el archivo en una ruta distinta a la esperada,
+            # moverlo a la ruta de destino solicitada.
+            if expected_output != pdf_abs and os.path.exists(expected_output):
+                shutil.move(expected_output, pdf_abs)
+
+            if not os.path.exists(pdf_abs):
+                raise Exception(
+                    f"La conversión se ejecutó pero el archivo PDF no fue generado: {pdf_abs}"
+                )
+        except subprocess.TimeoutExpired:
+            raise Exception("Tiempo de espera agotado al convertir DOCX a PDF")
+        except FileNotFoundError:
+            raise Exception(
+                "LibreOffice no está instalado. Instale libreoffice-writer-nogui."
+            )
         except Exception as e:
             raise Exception(f"Error al convertir a PDF: {str(e)}")
 

@@ -1,0 +1,6 @@
+El servidor corre con bind mount ./backend:/app y uvicorn --reload: el codigo en disco ES el codigo servido.
+ENVIRONMENT=development y DEBUG=True en el docker-compose de produccion.
+SECRET_KEY con fallback hardcoded 'supersecretkeychangeinproduction...' en el compose.
+El compose apunta DB_PATH a /opt/riap/db/cartera.db, pero el .env del servidor hace que la app use /opt/cyberrit/backend/test.db (25 tablas, 30 acuerdos). cartera.db solo tiene 16 tablas: es una base abandonada.
+frontend/dist se copio al servidor y el contenedor lo lleva dentro de la imagen (sin bind mount): hay dos copias del build.
+Contiene la clave privada del inquilino de la entidad territorial; conviene separarla de los datos.

@@ -1,0 +1,38 @@
+--- main/backend/app/repositories/user.py
++++ produccion/backend/app/repositories/user.py
+@@ -1,7 +1,7 @@
+ from typing import List, Optional
+ from datetime import datetime
+ from sqlalchemy.orm import Session
+-from app.models.user import User
++from app.models.user import User, UserTenant
+ from app.schemas.user import UserCreate, UserUpdate
+ from .base import BaseRepository
+ from passlib.context import CryptContext
+@@ -79,6 +79,7 @@
+     def create_user(self, user_create: UserCreate) -> User:
+         """
+         Crea un nuevo usuario con la contraseña encriptada.
++        Si tiene tenant_id, crea automaticamente la asignacion en user_tenants.
+ 
+         Args:
+             user_create: Datos del usuario a crear
+@@ -97,6 +98,18 @@
+                 is_platform_admin=user_create.role == "PLATFORM_ADMIN",
+             )
+             self.db_session.add(user)
++            self.db_session.flush()  # obtener user.id antes del commit
++            
++            # Crear asignacion de tenant automaticamente
++            if user_create.tenant_id:
++                ut = UserTenant(
++                    user_id=user.id,
++                    tenant_id=user_create.tenant_id,
++                    role=user_create.role,
++                    created_at=datetime.utcnow(),
++                )
++                self.db_session.add(ut)
++            
+             self.db_session.commit()
+             self.db_session.refresh(user)
+             return user

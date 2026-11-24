@@ -5,6 +5,8 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: localStorage.getItem('access_token') || null,
     currentUser: null,
+    availableTenants: JSON.parse(localStorage.getItem('available_tenants') || '[]'),
+    activeTenantId: parseInt(localStorage.getItem('active_tenant_id')) || null,
     loading: false,
     error: null
   }),
@@ -12,7 +14,9 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isAuthenticated: (state) => !!state.token,
     getToken: (state) => state.token,
-    getUserRole: (state) => state.currentUser?.role || null
+    getUserRole: (state) => state.currentUser?.role || null,
+    activeTenant: (state) => state.availableTenants.find(t => t.tenant_id === state.activeTenantId) || null,
+    hasMultipleTenants: (state) => state.availableTenants.length > 1,
   },
 
   actions: {
@@ -25,9 +29,17 @@ export const useAuthStore = defineStore('auth', {
         this.token = response.access_token
         this.currentUser = response.user
         
-        // Guardar token en localStorage
+        // Guardar tenants disponibles
+        this.availableTenants = response.available_tenants || []
+        this.activeTenantId = response.active_tenant_id || (this.availableTenants.length > 0 ? this.availableTenants[0].tenant_id : null)
+        
+        // Guardar token y tenant en localStorage
         localStorage.setItem('access_token', this.token)
         localStorage.setItem('user_role', response.user?.role || 'user')
+        localStorage.setItem('available_tenants', JSON.stringify(this.availableTenants))
+        if (this.activeTenantId) {
+          localStorage.setItem('active_tenant_id', String(this.activeTenantId))
+        }
         
         return { success: true }
       } catch (error) {
@@ -38,6 +50,8 @@ export const useAuthStore = defineStore('auth', {
         // Limpiar cualquier dato de sesión anterior
         localStorage.removeItem('access_token')
         localStorage.removeItem('user_role')
+        localStorage.removeItem('active_tenant_id')
+        localStorage.removeItem('available_tenants')
         
         return { 
           success: false, 
@@ -45,6 +59,21 @@ export const useAuthStore = defineStore('auth', {
         }
       } finally {
         this.loading = false
+      }
+    },
+
+    async switchTenant(tenantId) {
+      this.activeTenantId = tenantId
+      localStorage.setItem('active_tenant_id', String(tenantId))
+      
+      // Actualizar el currentUser con el nuevo tenant_id
+      if (this.currentUser) {
+        this.currentUser.tenant_id = tenantId
+        // Actualizar el rol al rol correspondiente en este tenant
+        const tenant = this.availableTenants.find(t => t.tenant_id === tenantId)
+        if (tenant) {
+          this.currentUser.role = tenant.role
+        }
       }
     },
 
@@ -77,8 +106,8 @@ export const useAuthStore = defineStore('auth', {
 
     async logout() {
       try {
-        // Llamar al nuevo endpoint de logout del backend
-        await apiClient.post('/api/v2/auth/logout');
+        // Llamar al endpoint de logout del backend
+        await authService.logout();
       } catch (error) {
         console.error('Error during backend logout:', error);
         // Continuar con el logout local incluso si el backend falla
@@ -86,18 +115,26 @@ export const useAuthStore = defineStore('auth', {
         // Limpiar estado local
         this.token = null
         this.currentUser = null
+        this.availableTenants = []
+        this.activeTenantId = null
         this.error = null
         
         // Remover del localStorage
         localStorage.removeItem('access_token')
         localStorage.removeItem('user_role')
+        localStorage.removeItem('active_tenant_id')
+        localStorage.removeItem('available_tenants')
       }
     },
 
     clearToken() {
       this.token = null
+      this.availableTenants = []
+      this.activeTenantId = null
       localStorage.removeItem('access_token')
       localStorage.removeItem('user_role')
+      localStorage.removeItem('active_tenant_id')
+      localStorage.removeItem('available_tenants')
     },
 
     setToken(token) {

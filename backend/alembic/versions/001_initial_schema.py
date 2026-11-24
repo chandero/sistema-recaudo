@@ -126,6 +126,25 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id')
     )
 
+    # Crear tabla document_templates
+    op.create_table('document_templates',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('tenant_id', sa.Integer(), nullable=False),
+        sa.Column('name', sa.String(length=255), nullable=False),
+        sa.Column('code', sa.String(length=100), nullable=False),
+        sa.Column('template_type', sa.String(length=50), nullable=False),
+        sa.Column('description', sa.String(length=500), nullable=True),
+        sa.Column('version', sa.Integer(), nullable=True, default=1),
+        sa.Column('is_active', sa.Boolean(), nullable=True, default=True),
+        sa.Column('content', sa.LargeBinary(), nullable=False),
+        sa.Column('variables_schema', sa.Text(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('tenant_id', 'code', name='uq_tenant_template_code')
+    )
+
     # Crear tabla documents
     op.create_table('generated_documents',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -147,25 +166,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
         sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ),
         sa.PrimaryKeyConstraint('id')
-    )
-
-    # Crear tabla document_templates
-    op.create_table('document_templates',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('tenant_id', sa.Integer(), nullable=False),
-        sa.Column('name', sa.String(length=255), nullable=False),
-        sa.Column('code', sa.String(length=100), nullable=False),
-        sa.Column('template_type', sa.String(length=50), nullable=False),
-        sa.Column('description', sa.String(length=500), nullable=True),
-        sa.Column('version', sa.Integer(), nullable=True, default=1),
-        sa.Column('is_active', sa.Boolean(), nullable=True, default=True),
-        sa.Column('content', sa.LargeBinary(), nullable=False),
-        sa.Column('variables_schema', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('tenant_id', 'code', name='uq_tenant_template_code')
     )
 
     # Crear tabla process_history
@@ -293,8 +293,8 @@ def downgrade() -> None:
     op.drop_table('import_templates')
     op.drop_table('tasks')
     op.drop_table('process_history')
-    op.drop_table('document_templates')
     op.drop_table('generated_documents')
+    op.drop_table('document_templates')
     op.drop_table('obligations')
     op.drop_table('cobro_processes')
     op.drop_table('workflow_states')

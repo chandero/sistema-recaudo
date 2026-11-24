@@ -1,0 +1,4 @@
+referencia,total_ref,total_prod,identicos,distintos,solo_en_servidor,solo_en_referencia,pct_coincidencia_con_prod
+main,141,204,101,40,63,0,49.5
+rama,176,204,144,32,28,0,70.6
+working_tree_main,141,204,101,40,63,0,49.5

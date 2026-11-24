@@ -1,0 +1,127 @@
+--- rama/backend/app/api/v1/endpoints/auth.py
++++ produccion/backend/app/api/v1/endpoints/auth.py
+@@ -1,7 +1,9 @@
+ from fastapi import APIRouter, Depends, HTTPException, status
+ from fastapi.security import OAuth2PasswordRequestForm
+ from sqlalchemy.orm import Session
++from sqlmodel import select
+ from typing import Any
++from pydantic import BaseModel
+ 
+ import re
+ 
+@@ -25,19 +27,46 @@
+ from app.core.security import create_access_token
+ from app.core.config import settings
+ from app.core.dependencies import get_current_active_user, get_current_platform_admin
+-from app.models.user import User
++from app.models.user import User, UserTenant
++from app.models.tenant import Tenant
+ from app.core.logging.logger import log_authentication_event, get_logger
+ 
+ router = APIRouter()
+ logger = get_logger(__name__)
+ 
+ 
+-def build_token_response(user) -> dict:
++def build_token_response(user, session=None, active_tenant_id=None) -> dict:
+     user_role = user.role.value if hasattr(user.role, "value") else user.role
++    
++    # Load user's tenant assignments
++    tenants = []
++    if session:
++        user_tenants = session.exec(
++            select(UserTenant).where(UserTenant.user_id == user.id)
++        ).all()
++        for ut in user_tenants:
++            tenant = session.get(Tenant, ut.tenant_id)
++            tenants.append({
++                "tenant_id": ut.tenant_id,
++                "tenant_name": tenant.name if tenant else f"Tenant #{ut.tenant_id}",
++                "role": ut.role.value if hasattr(ut.role, 'value') else ut.role,
++            })
++    
++    # Fallback: if no user_tenants yet, use user.tenant_id
++    if not tenants and user.tenant_id:
++        tenant_name = "Default"
++        if session:
++            t = session.get(Tenant, user.tenant_id)
++            tenant_name = t.name if t else f"Tenant #{user.tenant_id}"
++        tenants = [{"tenant_id": user.tenant_id, "tenant_name": tenant_name, "role": user_role}]
++    
++    # Determine active tenant
++    effective_tenant_id = active_tenant_id or (tenants[0]["tenant_id"] if tenants else user.tenant_id)
++    
+     access_token = create_access_token(data={
+         "sub": str(user.id),
+         "user_id": user.id,
+-        "tenant_id": user.tenant_id,
++        "tenant_id": effective_tenant_id,
+         "role": user_role,
+     })
+     return {
+@@ -50,9 +79,11 @@
+             "username": user.username,
+             "full_name": user.full_name,
+             "role": user_role,
+-            "tenant_id": user.tenant_id,
++            "tenant_id": effective_tenant_id,
+             "is_platform_admin": user.is_platform_admin,
+         },
++        "available_tenants": tenants,
++        "active_tenant_id": effective_tenant_id,
+     }
+ 
+ 
+@@ -111,7 +142,7 @@
+             user_agent=""  # Will be populated by middleware
+         )
+         
+-        return build_token_response(user)
++        return build_token_response(user, session=db)
+     finally:
+         db.close()
+ 
+@@ -145,7 +176,7 @@
+         user_agent=""  # Will be populated by middleware
+     )
+ 
+-    return build_token_response(user)
++    return build_token_response(user, session=db)
+ 
+ 
+ @router.post("/logout")
+@@ -188,4 +219,30 @@
+     """
+     Obtiene la información del usuario actual.
+     """
+-    return current_user
+\ No hay ningún carácter de nueva línea al final del archivo
++    return current_user
++
++
++class SwitchTenantRequest(BaseModel):
++    tenant_id: int
++
++
++@router.post("/switch-tenant")
++def switch_tenant(
++    payload: SwitchTenantRequest,
++    current_user: User = Depends(get_current_active_user),
++    db: Session = Depends(get_db),
++):
++    """Cambia el tenant activo del usuario. Valida que el usuario tenga acceso al tenant solicitado."""
++    user_tenant = db.exec(
++        select(UserTenant).where(
++            UserTenant.user_id == current_user.id,
++            UserTenant.tenant_id == payload.tenant_id,
++        )
++    ).first()
++    if not user_tenant:
++        raise HTTPException(
++            status_code=status.HTTP_403_FORBIDDEN,
++            detail="No tiene acceso a este tenant",
++        )
++    
++    return build_token_response(current_user, session=db, active_tenant_id=payload.tenant_id)
+\ No hay ningún carácter de nueva línea al final del archivo

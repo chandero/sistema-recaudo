@@ -1,0 +1,29 @@
+== /opt/riap/db ==
+total 1816
+drwxr-xr-x 2 root root    4096 jul 23 11:49 .
+drwxr-xr-x 3 root root    4096 jul 15 08:34 ..
+-rw-r--r-- 1 root root 1851392 jul 23 11:49 cartera.db
+-rw-r--r-- 1 root root       0 jul 15 09:38 .migration_control
+
+== sha256 de bases sqlite ==
+f79f839a901c87af598480aa199f56a54eda5ff37f8365beb0acc1e76fd7fe75  /opt/riap/db/cartera.db
+1498b0dc152293c6d94b8f5c0f352b3ed2133dda8ae96ab056a32c0986ced01c  /opt/cyberrit/backend/test.db
+611aa03e1a6bc3d18de4b126950e1a7d52ca4248e133741bd7de9875bb2716a3  /opt/cyberrit/backend/backups/test-db-before-resolution-print-20260715-012925.db
+ec06dd594cc5c570b51c0e22da4e612d0620f5638cd94c5a26eb1c42a89383e8  /opt/cyberrit/backups/test-db-before-resolution-assignment-20260714-164414.db
+3ae7143f9aa924012055618976b2eebff79b265e73a92a09887d8ef989cbb124  /opt/cyberrit/backups/test-db-pre-deploy-20260823-125350.db
+ad3d99411429beac2a9972e67e121aee9fac0e6118727d711b5bcfe931655ba6  /opt/cyberrit/backups/test-db-before-notif-enviada-20260824-100652.db
+
+== tablas y version de esquema ==
+--- /opt/cyberrit/backend/test.db
+tablas(25): agreement_installments, clients, cobro_processes, document_templates, generated_documents, import_batches, import_mapping_templates, import_templates, notifications, obligations, payment_agreements, permissions, process_configs, process_history, process_notes, sqlite_sequence, tasks, tenant_process_configs, tenants, user_audit_logs, user_invitations, user_tenants, users, workflow_states, workflow_transitions
+  filas tenants = 2
+  filas clients = 1309
+  filas obligations = 1417
+  filas payment_agreements = 30
+  filas notifications = 0
+--- /opt/riap/db/cartera.db
+tablas(16): alembic_version, clients, cobro_processes, document_templates, generated_documents, import_batches, import_mapping_templates, import_templates, obligations, permissions, process_history, tasks, tenants, users, workflow_states, workflow_transitions
+alembic_version: [('d6276b05fcf1',)]
+  filas tenants = 1
+  filas clients = 1309
+  filas obligations = 1417

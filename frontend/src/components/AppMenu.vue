@@ -31,6 +31,18 @@
       </router-link>
     </li>
     <li class="layout-menuitem">
+      <router-link to="/acuerdos">
+        <i class="pi pi-handshake"></i>
+        <span>Acuerdos de Pago</span>
+      </router-link>
+    </li>
+    <li class="layout-menuitem">
+      <router-link to="/reportes">
+        <i class="pi pi-chart-bar"></i>
+        <span>Reportes</span>
+      </router-link>
+    </li>
+    <li class="layout-menuitem">
       <router-link to="/resoluciones">
         <i class="pi pi-file-signature"></i>
         <span>{{ t('navigation.resolutions') }}</span>

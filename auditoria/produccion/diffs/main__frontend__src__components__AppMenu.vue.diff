@@ -1,0 +1,54 @@
+--- main/frontend/src/components/AppMenu.vue
++++ produccion/frontend/src/components/AppMenu.vue
+@@ -31,6 +31,18 @@
+       </router-link>
+     </li>
+     <li class="layout-menuitem">
++      <router-link to="/acuerdos">
++        <i class="pi pi-handshake"></i>
++        <span>Acuerdos de Pago</span>
++      </router-link>
++    </li>
++    <li class="layout-menuitem">
++      <router-link to="/reportes">
++        <i class="pi pi-chart-bar"></i>
++        <span>Reportes</span>
++      </router-link>
++    </li>
++    <li class="layout-menuitem">
+       <router-link to="/resoluciones">
+         <i class="pi pi-file-signature"></i>
+         <span>{{ t('navigation.resolutions') }}</span>
+@@ -48,19 +60,31 @@
+         <span>{{ t('navigation.import') }}</span>
+       </router-link>
+     </li>
+-    <li class="layout-menuitem">
++    <li v-if="isPlatformAdmin" class="layout-menuitem">
+       <router-link to="/admin">
+         <i class="pi pi-cog"></i>
+         <span>{{ t('navigation.administration') }}</span>
+       </router-link>
+     </li>
++    <li v-if="isUserAdmin" class="layout-menuitem">
++      <router-link to="/admin/usuarios">
++        <i class="pi pi-user-edit"></i>
++        <span>Gestión de usuarios</span>
++      </router-link>
++    </li>
+   </ul>
+ </template>
+ 
+ <script setup>
++import { computed } from 'vue';
+ import { useI18n } from '@/composables/useI18n';
++import { useAuthStore } from '@/stores/auth';
++import { canManageUsers, isPlatformAdmin as hasPlatformRole } from '@/utils/userManagement';
+ 
+ const { t } = useI18n();
++const authStore = useAuthStore();
++const isPlatformAdmin = computed(() => hasPlatformRole(authStore.currentUser?.role));
++const isUserAdmin = computed(() => canManageUsers(authStore.currentUser?.role));
+ </script>
+ 
+ <style scoped>

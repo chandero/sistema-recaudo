@@ -1,0 +1,309 @@
+--- main/frontend/src/components/Layout.vue
++++ produccion/frontend/src/components/Layout.vue
+@@ -18,9 +18,54 @@
+       </button>
+       <div class="topbar-content">
+         <Breadcrumb :home="home" :model="breadcrumbItems" class="topbar-breadcrumb" />
+-        <div class="user-info">
+-          <i class="pi pi-user mr-2"></i>
+-          <span>{{ currentUser?.username || 'Usuario' }}</span>
++        <div class="topbar-center">
++          <GlobalSearch />
++        </div>
++        <div class="user-section">
++          <!-- Tenant Selector -->
++          <div v-if="authStore.availableTenants.length > 1" class="tenant-selector-wrapper">
++            <Dropdown
++              :modelValue="authStore.activeTenantId"
++              @update:modelValue="onTenantSwitch"
++              :options="authStore.availableTenants"
++              optionLabel="tenant_name"
++              optionValue="tenant_id"
++              class="tenant-selector"
++              :panelStyle="{ minWidth: '220px' }"
++            >
++              <template #value="slotProps">
++                <div class="tenant-selector-value" v-if="slotProps.value">
++                  <i class="pi pi-building"></i>
++                  <span>{{ getTenantName(slotProps.value) }}</span>
++                </div>
++              </template>
++              <template #option="slotProps">
++                <div class="tenant-option">
++                  <i class="pi pi-building"></i>
++                  <div class="tenant-option-info">
++                    <span class="tenant-option-name">{{ slotProps.option.tenant_name }}</span>
++                    <span class="tenant-option-role">{{ slotProps.option.role }}</span>
++                  </div>
++                </div>
++              </template>
++            </Dropdown>
++          </div>
++          <div v-else-if="authStore.availableTenants.length === 1" class="tenant-badge">
++            <i class="pi pi-building"></i>
++            <span>{{ authStore.availableTenants[0].tenant_name }}</span>
++          </div>
++          
++          <NotificationBell />
++          <span class="user-name">{{ currentUser?.username || currentUser?.full_name || 'Usuario' }}</span>
++          <Avatar 
++            :label="getInitials(currentUser?.username || currentUser?.full_name || 'U')" 
++            class="user-avatar" 
++            size="large" 
++            shape="circle" 
++            @click="toggleUserMenu"
++            :pt="{ root: { class: 'cursor-pointer' } }"
++          />
++          <Menu ref="userMenuRef" :model="userMenuItems" :popup="true" />
+         </div>
+       </div>
+     </div>
+@@ -37,15 +82,24 @@
+ 
+ <script setup>
+ import { ref, computed, onMounted, onUnmounted } from 'vue';
+-import { useRoute } from 'vue-router';
++import { useRoute, useRouter } from 'vue-router';
+ import Breadcrumb from 'primevue/breadcrumb';
++import Avatar from 'primevue/avatar';
++import Menu from 'primevue/menu';
++import Dropdown from 'primevue/dropdown';
+ import { useAuthStore } from '@/stores/auth';
+-import AppMenu from './AppMenu.vue'; // Importar el componente AppMenu
++import { useI18n } from '@/composables/useI18n';
++import AppMenu from './AppMenu.vue';
++import NotificationBell from './NotificationBell.vue';
++import GlobalSearch from './GlobalSearch.vue';
+ 
+ // Estados
+ const mobileMenuActive = ref(false);
++const userMenuRef = ref();
+ const authStore = useAuthStore();
+ const route = useRoute();
++const router = useRouter();
++const { t } = useI18n();
+ 
+ // Obtener el usuario actual
+ const currentUser = computed(() => authStore.currentUser);
+@@ -56,6 +110,78 @@
+   to: '/dashboard'
+ });
+ 
++// Items del menú de usuario
++const userMenuItems = ref([
++  {
++    label: t('navigation.profile'),
++    icon: 'pi pi-user',
++    command: () => {
++      // Ir a la vista de perfil cuando esté implementada
++      console.log('Ir a perfil');
++    }
++  },
++  {
++    label: t('navigation.settings'),
++    icon: 'pi pi-cog',
++    command: () => {
++      // Ir a la vista de configuración cuando esté implementada
++      console.log('Ir a configuración');
++    }
++  },
++  {
++    separator: true
++  },
++  {
++    label: t('navigation.logout'),
++    icon: 'pi pi-sign-out',
++    command: () => {
++      handleLogout();
++    }
++  }
++]);
++
++// Función para obtener iniciales del nombre
++const getInitials = (name) => {
++  if (!name) return 'U';
++  return name
++    .split(' ')
++    .map(n => n.charAt(0))
++    .join('')
++    .substring(0, 2)
++    .toUpperCase();
++};
++
++// Función para alternar el menú de usuario
++const toggleUserMenu = (event) => {
++  userMenuRef.value.toggle(event);
++};
++
++// Función para manejar el cierre de sesión
++const handleLogout = async () => {
++  try {
++    await authStore.logout(); // Llama al logout del store que también llama al backend
++    router.push('/login');
++  } catch (error) {
++    console.error('Error during logout:', error);
++    // Asegurar que se limpie la sesión incluso si hay un error
++    authStore.logout();
++    router.push('/login');
++  }
++};
++
++// Funciones para el selector de tenant
++const getTenantName = (tenantId) => {
++  const tenant = authStore.availableTenants.find(t => t.tenant_id === tenantId);
++  return tenant?.tenant_name || `Tenant #${tenantId}`;
++};
++
++const onTenantSwitch = async (tenantId) => {
++  if (tenantId === authStore.activeTenantId) return;
++  await authStore.switchTenant(tenantId);
++  // Recargar la pagina para refrescar todos los datos con el nuevo tenant
++  window.location.reload();
++};
++
+ // Items del breadcrumb basados en la ruta actual
+ const breadcrumbItems = computed(() => {
+   const path = route.path;
+@@ -68,6 +194,9 @@
+     '/obligaciones': 'Obligaciones',
+     '/procesos': 'Procesos',
+     '/workflow': 'Workflow',
++    '/workflow/disenador': 'Diseñador de Flujo',
++    '/acuerdos': 'Acuerdos de Pago',
++    '/reportes': 'Reportes',
+     '/resoluciones': 'Resoluciones',
+     '/documentos': 'Documentos',
+     '/importar': 'Importar',
+@@ -99,6 +228,7 @@
+ onMounted(() => {
+   window.addEventListener('resize', handleResize);
+   handleResize(); // Ejecutar una vez para establecer el estado inicial
++  handleResize(); // Ejecutar una vez para establecer el estado inicial
+ });
+ 
+ onUnmounted(() => {
+@@ -218,13 +348,30 @@
+ }
+ 
+ .topbar-breadcrumb {
++  flex: 0 0 auto;
++}
++
++.topbar-center {
+   flex: 1;
++  display: flex;
++  justify-content: center;
+ }
+ 
+-.user-info {
++.user-section {
+   display: flex;
+   align-items: center;
++  gap: 12px;
++}
++
++.user-name {
+   font-weight: 500;
++  color: #495057;
++  margin-right: 8px;
++  display: none; /* Ocultar en pantallas pequeñas para ahorrar espacio */
++}
++
++.user-avatar {
++  cursor: pointer;
+ }
+ 
+ .layout-content {
+@@ -254,6 +401,81 @@
+   z-index: 998;
+ }
+ 
++/* Tenant Selector */
++.tenant-selector-wrapper {
++  display: flex;
++  align-items: center;
++}
++
++.tenant-selector {
++  min-width: 160px;
++  max-width: 220px;
++}
++
++.tenant-selector :deep(.p-dropdown-label) {
++  padding: 0.4rem 0.75rem;
++  font-size: 0.85rem;
++}
++
++.tenant-selector-value {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  font-size: 0.85rem;
++  color: #495057;
++}
++
++.tenant-selector-value i {
++  font-size: 0.8rem;
++  color: var(--primary-color, #3b82f6);
++}
++
++.tenant-option {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  padding: 4px 0;
++}
++
++.tenant-option i {
++  color: var(--primary-color, #3b82f6);
++  font-size: 0.9rem;
++}
++
++.tenant-option-info {
++  display: flex;
++  flex-direction: column;
++}
++
++.tenant-option-name {
++  font-size: 0.85rem;
++  font-weight: 500;
++}
++
++.tenant-option-role {
++  font-size: 0.7rem;
++  color: var(--text-color-secondary, #6b7280);
++  text-transform: uppercase;
++  letter-spacing: 0.5px;
++}
++
++.tenant-badge {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  background: #f0f4ff;
++  border: 1px solid #d0d9ff;
++  border-radius: 6px;
++  padding: 4px 10px;
++  font-size: 0.8rem;
++  color: var(--primary-color, #3b82f6);
++  font-weight: 500;
++}
++
++.tenant-badge i {
++  font-size: 0.75rem;
++}
++
+ /* Estilos para móvil */
+ @media screen and (max-width: 992px) {
+   .layout-sidebar {
+@@ -280,6 +502,10 @@
+     display: block;
+   }
+ 
++  .user-name {
++    display: inline-block; /* Mostrar en móviles si hay espacio suficiente */
++  }
++
+   .layout-mobile-active .layout-sidebar {
+     transform: translateX(0);
+   }

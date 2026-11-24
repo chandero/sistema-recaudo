@@ -1,0 +1,24 @@
+fecha_servidor=2026-11-24 08:55:12 -05
+hostname=siap
+ultimo_deploy=2026-08-28 14:19:10
+git_en_app=sin .git
+
+== contenedores ==
+cartera_frontend | cyberrit-frontend | Up 3 weeks
+cartera_backend | cyberrit-backend | Up 3 weeks
+cartera_redis | redis:alpine | Up 3 weeks
+cyberrit-postgres-1 | postgres:16 | Exited (0) 13 months ago
+
+== imagenes ==
+cyberrit-frontend:latest | creada=2 months ago | id=9022e284ea9c
+cyberrit-backend:latest | creada=3 months ago | id=3c2434a9f22c
+
+== mounts ==
+[{"Type":"bind","Source":"/opt/cyberrit/backend","Destination":"/app","Mode":"rw","RW":true,"Propagation":"rprivate"},{"Type":"bind","Source":"/opt/riap/db","Destination":"/opt/riap/db","Mode":"rw","RW":true,"Propagation":"rprivate"}]
+[]
+
+== cmd backend en ejecucion ==
+["sh","-c","python3 -c \"from app.core.database import init_db; init_db()\" && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"] "sh" ["-c","python3 -c \"from app.core.database import init_db; init_db()\" && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+
+== redis ==
+["redis-server"]

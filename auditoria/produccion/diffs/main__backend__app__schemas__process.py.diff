@@ -1,0 +1,172 @@
+--- main/backend/app/schemas/process.py
++++ produccion/backend/app/schemas/process.py
+@@ -1,6 +1,6 @@
+ from pydantic import BaseModel
+ from typing import Optional, Dict, List
+-from datetime import datetime
++from datetime import datetime, date
+ from enum import Enum
+ 
+ 
+@@ -34,6 +34,7 @@
+     created_at: datetime
+     updated_at: datetime
+     state_changed_at: datetime
++    obligation_amount: Optional[float] = None
+     
+     class Config:
+         from_attributes = True
+@@ -57,7 +58,153 @@
+     user_id: Optional[int] = None
+     previous_state_id: Optional[int] = None
+     new_state_id: Optional[int] = None
++    extra_data: Optional[Dict] = None
+     created_at: datetime
+     
+     class Config:
+         from_attributes = True
++
++
++class ProcessPaginatedResponse(BaseModel):
++    items: List[CobroProcessResponse]
++    total: int
++    page: int
++    page_size: int
++    pages: int
++
++
++class TransitionRequest(BaseModel):
++    target_state_id: int
++    observations: Optional[str] = None
++
++
++class AvailableTransition(BaseModel):
++    id: int
++    name: Optional[str] = None
++    target_state_id: int
++    target_state_code: str
++    target_state_name: str
++    is_automatic: bool
++
++
++class ProcessStateInfo(BaseModel):
++    state_id: int
++    state_code: str
++    state_name: str
++    days_in_state: int
++    max_days: Optional[int] = None
++    changed_at: datetime
++
++
++class ProcessDetailResponse(CobroProcessResponse):
++    client_name: Optional[str] = None
++    client_identification: Optional[str] = None
++    total_obligations: int = 0
++    total_amount: float = 0
++    state_info: Optional[ProcessStateInfo] = None
++    available_transitions: List[AvailableTransition] = []
++    payment_agreement: Optional[dict] = None
++
++
++class TimelineEntry(BaseModel):
++    id: int
++    action: str
++    description: Optional[str] = None
++    user_name: Optional[str] = None
++    previous_state_name: Optional[str] = None
++    new_state_name: Optional[str] = None
++    extra_data: Optional[Dict] = None
++    created_at: datetime
++
++    class Config:
++        from_attributes = True
++
++
++class ProcessStatsByState(BaseModel):
++    state_code: str
++    state_name: str
++    count: int
++    avg_days: float
++
++
++class ProcessStatsResponse(BaseModel):
++    total_processes: int
++    active_processes: int
++    suspended_processes: int
++    closed_processes: int
++    by_state: List[ProcessStatsByState]
++    total_amount: float
++    avg_days_in_current_state: float
++
++
++# --- Expediente Digital ---
++
++class ProcessNoteCreate(BaseModel):
++    title: str
++    content: str
++    note_type: str = "general"  # general, compromiso, recordatorio, gestion
++    is_pinned: bool = False
++
++
++class ProcessNoteResponse(BaseModel):
++    id: int
++    tenant_id: int
++    process_id: int
++    user_id: Optional[int] = None
++    note_type: str
++    title: str
++    content: str
++    is_pinned: bool
++    created_at: datetime
++    updated_at: datetime
++    user_name: Optional[str] = None
++
++    class Config:
++        from_attributes = True
++
++
++class ExpedientObligation(BaseModel):
++    id: int
++    amount: float
++    currency: str
++    status: str
++    type: str
++    description: Optional[str] = None
++    due_date: datetime
++    issue_date: datetime
++    resolution_number: Optional[str] = None
++    radicado_number: Optional[str] = None
++
++    class Config:
++        from_attributes = True
++
++
++class ExpedientDocument(BaseModel):
++    id: int
++    filename: str
++    document_type: str
++    file_size: int
++    created_at: datetime
++    created_by_name: Optional[str] = None
++    is_sent: bool
++    resolution_number: Optional[str] = None
++    radicado_number: Optional[str] = None
++
++    class Config:
++        from_attributes = True
++
++
++class ExpedientResponse(BaseModel):
++    process: CobroProcessResponse
++    client_name: Optional[str] = None
++    client_identification: Optional[str] = None
++    client_phone: Optional[str] = None
++    client_email: Optional[str] = None
++    client_address: Optional[str] = None
++    state_name: Optional[str] = None
++    state_code: Optional[str] = None
++    days_in_state: int = 0
++    obligations: List[ExpedientObligation] = []
++    documents: List[ExpedientDocument] = []
++    notes: List[ProcessNoteResponse] = []
++    timeline: List[TimelineEntry] = []

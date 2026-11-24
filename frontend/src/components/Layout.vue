@@ -18,7 +18,44 @@
       </button>
       <div class="topbar-content">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="topbar-breadcrumb" />
+        <div class="topbar-center">
+          <GlobalSearch />
+        </div>
         <div class="user-section">
+          <!-- Tenant Selector -->
+          <div v-if="authStore.availableTenants.length > 1" class="tenant-selector-wrapper">
+            <Dropdown
+              :modelValue="authStore.activeTenantId"
+              @update:modelValue="onTenantSwitch"
+              :options="authStore.availableTenants"
+              optionLabel="tenant_name"
+              optionValue="tenant_id"
+              class="tenant-selector"
+              :panelStyle="{ minWidth: '220px' }"
+            >
+              <template #value="slotProps">
+                <div class="tenant-selector-value" v-if="slotProps.value">
+                  <i class="pi pi-building"></i>
+                  <span>{{ getTenantName(slotProps.value) }}</span>
+                </div>
+              </template>
+              <template #option="slotProps">
+                <div class="tenant-option">
+                  <i class="pi pi-building"></i>
+                  <div class="tenant-option-info">
+                    <span class="tenant-option-name">{{ slotProps.option.tenant_name }}</span>
+                    <span class="tenant-option-role">{{ slotProps.option.role }}</span>
+                  </div>
+                </div>
+              </template>
+            </Dropdown>
+          </div>
+          <div v-else-if="authStore.availableTenants.length === 1" class="tenant-badge">
+            <i class="pi pi-building"></i>
+            <span>{{ authStore.availableTenants[0].tenant_name }}</span>
+          </div>
+          
+          <NotificationBell />
           <span class="user-name">{{ currentUser?.username || currentUser?.full_name || 'Usuario' }}</span>
           <Avatar 
             :label="getInitials(currentUser?.username || currentUser?.full_name || 'U')" 
@@ -49,9 +86,12 @@ import { useRoute, useRouter } from 'vue-router';
 import Breadcrumb from 'primevue/breadcrumb';
 import Avatar from 'primevue/avatar';
 import Menu from 'primevue/menu';
+import Dropdown from 'primevue/dropdown';
 import { useAuthStore } from '@/stores/auth';
 import { useI18n } from '@/composables/useI18n';
-import AppMenu from './AppMenu.vue'; // Importar el componente AppMenu
+import AppMenu from './AppMenu.vue';
+import NotificationBell from './NotificationBell.vue';
+import GlobalSearch from './GlobalSearch.vue';
 
 // Estados
 const mobileMenuActive = ref(false);
@@ -129,6 +169,19 @@ const handleLogout = async () => {
   }
 };
 
+// Funciones para el selector de tenant
+const getTenantName = (tenantId) => {
+  const tenant = authStore.availableTenants.find(t => t.tenant_id === tenantId);
+  return tenant?.tenant_name || `Tenant #${tenantId}`;
+};
+
+const onTenantSwitch = async (tenantId) => {
+  if (tenantId === authStore.activeTenantId) return;
+  await authStore.switchTenant(tenantId);
+  // Recargar la pagina para refrescar todos los datos con el nuevo tenant
+  window.location.reload();
+};
+
 // Items del breadcrumb basados en la ruta actual
 const breadcrumbItems = computed(() => {
   const path = route.path;
@@ -141,6 +194,9 @@ const breadcrumbItems = computed(() => {
     '/obligaciones': 'Obligaciones',
     '/procesos': 'Procesos',
     '/workflow': 'Workflow',
+    '/workflow/disenador': 'Diseñador de Flujo',
+    '/acuerdos': 'Acuerdos de Pago',
+    '/reportes': 'Reportes',
     '/resoluciones': 'Resoluciones',
     '/documentos': 'Documentos',
     '/importar': 'Importar',
@@ -292,7 +348,13 @@ const currentPageTitle = ref('Dashboard'); // Valor por defecto
 }
 
 .topbar-breadcrumb {
+  flex: 0 0 auto;
+}
+
+.topbar-center {
   flex: 1;
+  display: flex;
+  justify-content: center;
 }
 
 .user-section {
@@ -337,6 +399,81 @@ const currentPageTitle = ref('Dashboard'); // Valor por defecto
   height: 100%;
   background-color: rgba(0, 0, 0, 0.4);
   z-index: 998;
+}
+
+/* Tenant Selector */
+.tenant-selector-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.tenant-selector {
+  min-width: 160px;
+  max-width: 220px;
+}
+
+.tenant-selector :deep(.p-dropdown-label) {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.tenant-selector-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #495057;
+}
+
+.tenant-selector-value i {
+  font-size: 0.8rem;
+  color: var(--primary-color, #3b82f6);
+}
+
+.tenant-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.tenant-option i {
+  color: var(--primary-color, #3b82f6);
+  font-size: 0.9rem;
+}
+
+.tenant-option-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.tenant-option-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.tenant-option-role {
+  font-size: 0.7rem;
+  color: var(--text-color-secondary, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tenant-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f0f4ff;
+  border: 1px solid #d0d9ff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: var(--primary-color, #3b82f6);
+  font-weight: 500;
+}
+
+.tenant-badge i {
+  font-size: 0.75rem;
 }
 
 /* Estilos para móvil */

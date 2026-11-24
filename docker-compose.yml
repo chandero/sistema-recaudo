@@ -15,7 +15,7 @@ services:
       USE_SQLITE: "True"
       SECRET_KEY: ${SECRET_KEY:-supersecretkeychangeinproduction1234567890}
       ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      ACCESS_TOKEN_EXPIRE_MINUTES: 480
       REDIS_HOST: redis
       REDIS_PORT: 6379
       DEBUG: "True"

@@ -1,0 +1,9 @@
+HEAD=1984fd4 rama=main
+origin/main=1984fd4
+origin/refactor/ajuste-global-reglas=4997a0f
+working_tree_sucio=1 entradas
+ramas_remotas:
+1984fd45e1bbb88b7240215401e5477360dcc259	refs/heads/main
+4997a0f11132a4ac252fa94d9264cb2d68eeb573	refs/heads/refactor/ajuste-global-reglas
+tags:
+0

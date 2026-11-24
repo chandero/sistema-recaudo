@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 
 
 class Token(BaseModel):
@@ -7,6 +7,8 @@ class Token(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: Optional[dict] = None
+    available_tenants: List[dict] = []
+    active_tenant_id: Optional[int] = None
 
 
 class TokenData(BaseModel):

@@ -1,0 +1,94 @@
+== index.html ==
+-rwxr-xr-x 1 root root 1359 ago 27 14:10 /opt/cyberrit/frontend/dist/index.html
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gestión de Cartera</title>
+    <!-- PrimeVue 3.x Styles - will be loaded from CDN in dev, bundled in prod -->
+    <link rel="stylesheet" href="https://unpkg.com/primevue@3.45.0/resources/themes/lara-light-indigo/theme.css" />
+    <link rel="stylesheet" href="https://unpkg.com/primevue@3.45.0/resources/primevue.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/primeicons@6.0.1/primeicons.css" />
+    <link rel="stylesheet" href="https://unpkg.com/primeflex@3.3.0/primeflex.min.css" />
+    <script type="module" crossorigin src="/assets/index-C-vhG3i0.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CUMNJegx.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      // Fallback message if JS fails
+      setTimeout(function() {
+        if (!document.getElementById('app').innerHTML || document.getElementById('app').innerHTML.trim() === '<div id="app"></div>') {
+          document.body.innerHTML = '<div style="padding: 40px; text-align: center; font-family: sans-serif;"><h1>Cargando...</h1><p>Si no carga, recarga con Ctrl+F5</p></div>';
+        }
+      }, 2000);
+    </script>
+  </body>
+</html>
+
+== assets ==
+total 3384
+drwxr-xr-x 2 root root   4096 ago 27 14:10 .
+drwxr-xr-x 3 root root   4096 sep  1 14:36 ..
+-rwxr-xr-x 1 root root   2568 ago 27 14:10 AceptarInvitacionView-BBWjZowj.js
+-rwxr-xr-x 1 root root    595 ago 27 14:10 AceptarInvitacionView-D6vPTGLr.css
+-rwxr-xr-x 1 root root  13302 ago 27 14:10 AcuerdosView-CdQHG8ra.js
+-rwxr-xr-x 1 root root   1087 ago 27 14:10 AcuerdosView-HUCVvuTl.css
+-rwxr-xr-x 1 root root    361 ago 27 14:10 AdminView-Cj13otqy.css
+-rwxr-xr-x 1 root root  14934 ago 27 14:10 AdminView-DfWssqvD.js
+-rwxr-xr-x 1 root root 208301 ago 27 14:10 auto-CpL4W96M.js
+-rwxr-xr-x 1 root root   6541 ago 27 14:10 ClientesView-B-iuli5Y.js
+-rwxr-xr-x 1 root root    421 ago 27 14:10 ClientesView-Bss6MW3n.css
+-rwxr-xr-x 1 root root   2710 ago 27 14:10 ConfirmationDialog-BkdTqnKr.js
+-rwxr-xr-x 1 root root    912 ago 27 14:10 ConfirmationDialog--MRsi2zJ.css
+-rwxr-xr-x 1 root root   8868 ago 27 14:10 DashboardView-Dl0j19bZ.js
+-rwxr-xr-x 1 root root   3491 ago 27 14:10 DashboardView-U3hbMSPr.css
+-rwxr-xr-x 1 root root    930 ago 27 14:10 DataTableWrapper-CGijfYh3.css
+-rwxr-xr-x 1 root root   3083 ago 27 14:10 DataTableWrapper-hUO5BvtN.js
+-rwxr-xr-x 1 root root  32824 ago 27 14:10 DocumentosView-3yKQ3rVw.js
+-rwxr-xr-x 1 root root   1368 ago 27 14:10 DocumentosView-op_1XkJO.css
+-rwxr-xr-x 1 root root  23854 ago 27 14:10 ExpedienteView-5ozpjJPj.js
+-rwxr-xr-x 1 root root   5972 ago 27 14:10 ExpedienteView-7vDU07LY.css
+-rwxr-xr-x 1 root root    661 ago 27 14:10 FormWrapper-BWSWdGZp.css
+-rwxr-xr-x 1 root root   1645 ago 27 14:10 FormWrapper-VijWez3h.js
+-rwxr-xr-x 1 root root 358596 ago 27 14:10 ImportarView-BPVyAJgY.js
+-rwxr-xr-x 1 root root   7195 ago 27 14:10 ImportarView-D0Js1I9W.css
+-rwxr-xr-x 1 root root 570189 ago 27 14:10 index-CUMNJegx.css
+-rwxr-xr-x 1 root root 852988 ago 27 14:10 index-C-vhG3i0.js
+-rwxr-xr-x 1 root root 245036 ago 27 14:10 Inter-italic.var-DhD-tpjY.woff2
+-rwxr-xr-x 1 root root 227180 ago 27 14:10 Inter-roman.var-C-r5W2Hj.woff2
+-rwxr-xr-x 1 root root   2255 ago 27 14:10 LoginView-C3rhmu1X.css
+-rwxr-xr-x 1 root root   3800 ago 27 14:10 LoginView-Csdeq4Ys.js
+-rwxr-xr-x 1 root root  11071 ago 27 14:10 ObligacionesView-BTHE_0xH.js
+-rwxr-xr-x 1 root root    774 ago 27 14:10 ObligacionesView-DwjUXZtg.css
+-rwxr-xr-x 1 root root    846 ago 27 14:10 PageHeader-B0X17I-1.css
+-rwxr-xr-x 1 root root   1037 ago 27 14:10 PageHeader-C8zmiM05.js
+-rwxr-xr-x 1 root root 291454 ago 27 14:10 primeicons-BubJZjaf.svg
+-rwxr-xr-x 1 root root  72280 ago 27 14:10 primeicons-CCFeZR6K.woff
+-rwxr-xr-x 1 root root  72380 ago 27 14:10 primeicons-Dk_eWBPK.eot
+-rwxr-xr-x 1 root root  30180 ago 27 14:10 primeicons-DsZ1W7-Z.woff2
+-rwxr-xr-x 1 root root  72204 ago 27 14:10 primeicons-NDVQFXzF.ttf
+-rwxr-xr-x 1 root root   4808 ago 27 14:10 ProcesosView-CFteqIkV.css
+-rwxr-xr-x 1 root root  31817 ago 27 14:10 ProcesosView-DO1N-EiU.js
+-rwxr-xr-x 1 root root  23915 ago 27 14:10 ProtectedLayout-CRgGv0oO.js
+-rwxr-xr-x 1 root root   8568 ago 27 14:10 ProtectedLayout-Ddv7P7w4.css
+-rwxr-xr-x 1 root root   2675 ago 27 14:10 ReportesView-BZAg-CP9.css
+-rwxr-xr-x 1 root root   6081 ago 27 14:10 ReportesView-DBEjspqo.js
+-rwxr-xr-x 1 root root  26082 ago 27 14:10 ResolucionesView-Bjp9BILh.js
+-rwxr-xr-x 1 root root   1597 ago 27 14:10 ResolucionesView-Bo_rwoE2.css
+-rwxr-xr-x 1 root root    511 ago 27 14:10 useAuth-DYKjMLdV.js
+-rwxr-xr-x 1 root root    585 ago 27 14:10 useErrorHandler-UUdhS_w0.js
+-rwxr-xr-x 1 root root   1729 ago 27 14:10 UserFeedback-BSUnLzjN.css
+-rwxr-xr-x 1 root root   1756 ago 27 14:10 UserFeedback-DB26aS2E.js
+-rwxr-xr-x 1 root root   1180 ago 27 14:10 UsuariosView-BIfsJ3g-.css
+-rwxr-xr-x 1 root root  13997 ago 27 14:10 UsuariosView-Dx5KL4sQ.js
+-rwxr-xr-x 1 root root  24963 ago 27 14:10 WorkflowDesignerView-BNBXU_4k.js
+-rwxr-xr-x 1 root root   3806 ago 27 14:10 WorkflowDesignerView-CDwNvyRM.css
+-rwxr-xr-x 1 root root   5872 ago 27 14:10 WorkflowView-BxAZagxP.css
+-rwxr-xr-x 1 root root  13139 ago 27 14:10 WorkflowView-ij_Xl_4e.js
+
+== index.prod.html versionado en el servidor ==
+/assets/index-CUMNJegx.css
+/assets/index-D6YcdXdU.js

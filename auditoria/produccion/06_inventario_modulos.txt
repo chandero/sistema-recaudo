@@ -1,0 +1,126 @@
+===== frontend/src/views =====
+    
+4096 ago 23 12:13 .
+4096 jul 15 09:18 ..
+3148 jul 15 09:52 AceptarInvitacionView.vue
+18330 ago 27 15:12 AcuerdosView.vue
+24352 jul 15 10:29 AdminView.vue
+9136 jul 14 19:01 ClientesView.vue
+16616 ago 24 17:06 DashboardView.vue
+38881 ago 24 08:47 DocumentosView.vue
+38952 ago 27 11:33 ExpedienteView.vue
+40085 jul 14 17:27 ImportarView.vue
+7774 ago 24 16:35 LoginView.vue
+17199 jul 14 16:04 ObligacionesView.vue
+838 jul 10 10:58 PlaceholderView.vue
+39576 ago 27 10:47 ProcesosView.vue
+10346 ago 23 12:06 ReportesView.vue
+40576 jul 17 16:47 ResolucionesView.vue
+38916 jul 17 16:46 ResolucionesView.vue.bak
+17451 jul 15 10:29 UsuariosView.vue
+36703 ago 24 12:21 WorkflowDesignerView.vue
+25893 ago 24 11:14 WorkflowView.vue
+===== frontend/src/components =====
+    
+4096 ago 23 12:04 .
+4096 jul 15 09:18 ..
+3411 ago 23 12:06 AppMenu.vue
+4562 jul 12 19:20 ConfirmationDialog.vue
+4694 jul 14 17:27 DataTableWrapper.vue
+13227 jul 12 19:13 DocumentGenerator.vue
+2607 jul 14 11:00 FormWrapper.vue
+5559 ago 23 12:06 GlobalSearch.vue
+6567 jul 12 19:13 HelpTooltip.vue
+11529 ago 24 16:35 Layout.vue
+2560 jul 12 19:13 LoadingSpinner.vue
+7483 ago 23 12:06 NotificationBell.vue
+1833 jul 12 19:13 PageHeader.vue
+4504 jul 12 19:13 UserFeedback.vue
+===== backend/app/api/v1/endpoints =====
+    
+4096 ago 23 12:01 .
+4096 jul 14 08:32 ..
+8843 ago 24 16:35 auth.py
+2102 jul 14 19:00 clients.py
+6514 ago 23 11:55 dashboard.py
+33067 jul 23 16:08 documents.py
+23956 jul 14 14:43 importer.py
+24 jul 7 16:01 __init__.py
+6601 ago 23 12:01 notifications.py
+5060 jul 14 16:04 obligations.py
+14107 ago 27 10:17 payment_agreements.py
+45957 ago 27 15:12 processes.py
+4096 ago 28 14:18 __pycache__
+7794 ago 23 12:01 reports.py
+2353 jul 12 19:13 tenants.py
+20301 ago 24 16:35 users.py
+27045 ago 28 14:18 workflows.py
+===== backend/app/models =====
+    
+4096 ago 23 12:00 .
+4096 ago 23 11:54 ..
+1270 jul 12 19:13 base.py
+1454 jul 13 14:48 client.py
+2766 jul 12 19:13 document.py
+1890 jul 12 19:13 import_batch.py
+1021 jul 12 19:13 import_map.py
+1177 jul 7 16:01 import_template.py
+1760 ago 23 12:01 __init__.py
+1161 ago 23 12:01 notification.py
+2715 jul 14 20:01 obligation.py
+3033 ago 23 11:56 payment_agreement.py
+877 ago 23 11:34 process_config.py
+1171 ago 23 11:55 process_note.py
+2692 jul 9 09:40 process.py
+4096 ago 27 11:28 __pycache__
+1901 jul 9 09:44 task.py
+1872 jul 23 11:08 tenant.py
+988 jul 15 09:50 user_audit.py
+904 jul 15 09:50 user_invitation.py
+3088 ago 24 16:35 user.py
+2991 jul 9 05:35 workflow.py
+===== backend/app/services =====
+    
+4096 jul 17 12:04 .
+4096 ago 23 11:54 ..
+14379 jul 14 19:00 client_service.py
+14117 ago 23 11:33 document_generation_service.py
+5088 jul 12 19:13 document_service.py
+3826 jul 15 09:51 email_service.py
+7854 jul 23 11:11 excel_export_service.py
+42815 jul 16 10:36 import_service.py
+902 jul 12 20:41 __init__.py
+5071 jul 15 08:44 obligation_service.py
+5250 jul 12 19:13 process_service.py
+4096 nov 20 08:31 __pycache__
+5003 jul 12 19:13 user_service.py
+===== backend/app/schemas =====
+    
+4096 ago 23 11:57 .
+4096 ago 23 11:54 ..
+912 ago 24 16:35 auth.py
+2151 jul 13 14:48 client.py
+2772 jul 9 16:06 document.py
+357 jul 12 20:41 import_batch.py
+2444 jul 12 20:41 import_map.py
+1617 jul 9 06:12 __init__.py
+1877 jul 14 20:01 obligation.py
+1889 ago 23 12:01 payment_agreement.py
+4932 ago 27 15:12 process.py
+4096 ago 28 14:18 __pycache__
+502 jul 7 16:01 tenant.py
+2460 jul 15 09:50 user.py
+3948 ago 24 12:21 workflow.py
+===== backend/alembic/versions =====
+    
+4096 ago 24 16:20 .
+4096 jul 15 09:46 ..
+16331 ago 23 12:31 001_initial_schema.py
+2074 jul 15 09:39 002_user_audit_logs.py
+1948 jul 15 09:50 003_user_invitations.py
+1766 ago 23 11:34 004_tenant_process_configs.py
+2112 ago 23 12:31 005_process_notes.py
+1630 ago 24 16:35 005_user_tenants.py
+4617 ago 23 12:01 006_payment_agreements.py
+1962 ago 23 12:31 007_notifications.py
+1168 ago 23 12:36 d6276b05fcf1_add_city_and_department_fields_to_tenant.py

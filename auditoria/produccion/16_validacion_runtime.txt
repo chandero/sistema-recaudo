@@ -1,0 +1,5 @@
+backend local /health: 200 {"status":"healthy"}
+rutas backend local: 84 | rutas backend produccion: 84 | solo-prod: 0 | solo-local: 0
+frontend local: 200 ['Sistema de Gestión de Cartera'] ['/assets/index-C-vhG3i0.js']
+chunk de vistas exclusivas de produccion presentes en el build local:
+  []

@@ -7,12 +7,16 @@ from app.core.database import init_db
 from app.api.v1.api import api_router
 from app.core.logging import logger
 from app.models.workflow import WorkflowState
+from app.core.security.http_security import HttpSecurityMiddleware
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Sistema de Seguimiento y Control de Cobro de Cartera"
 )
+
+# Seguridad HTTP (cabeceras de seguridad en todas las respuestas)
+app.add_middleware(HttpSecurityMiddleware)
 
 # CORS
 app.add_middleware(
@@ -31,10 +35,20 @@ app.include_router(api_router, prefix="/api/v1")
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     """Manejar excepciones de validación"""
-    logger.warning(f"Validation error: {exc.errors()}, body: {getattr(request, 'body', None)}")
+    # Sanitize errors: convert bytes and other non-serializable objects to strings
+    safe_errors = []
+    for error in exc.errors():
+        safe_error = {}
+        for key, value in error.items():
+            if isinstance(value, bytes):
+                safe_error[key] = value.decode("utf-8", errors="replace")
+            else:
+                safe_error[key] = str(value) if not isinstance(value, (str, int, float, bool, list, dict, type(None))) else value
+        safe_errors.append(safe_error)
+    logger.warning(f"Validation error: {safe_errors}")
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()}
+        content={"detail": safe_errors}
     )
 
 

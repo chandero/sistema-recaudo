@@ -1,0 +1,59 @@
+--- main/backend/app/schemas/workflow.py
++++ produccion/backend/app/schemas/workflow.py
+@@ -83,3 +83,56 @@
+     
+     class Config:
+         from_attributes = True
++
++
++class KanbanCard(BaseModel):
++    process_id: int
++    reference: str
++    client_name: Optional[str] = None
++    total_amount: float = 0
++    days_in_state: int = 0
++    max_days: Optional[int] = None
++    state_changed_at: Optional[datetime] = None
++    status: str = "ACTIVE"
++
++
++class KanbanColumn(BaseModel):
++    state_id: int
++    state_code: str
++    state_name: str
++    order: int
++    max_days: Optional[int] = None
++    is_final: bool = False
++    count: int = 0
++    cards: List[KanbanCard] = []
++    transitions: List[int] = []  # target_state_ids available from this column
++
++
++class KanbanResponse(BaseModel):
++    columns: List[KanbanColumn] = []
++    total_processes: int = 0
++
++
++class TransitionRuleResponse(BaseModel):
++    """Regla de transición con nombres de estados (para el diseñador)."""
++    id: int
++    source_state_id: int
++    source_state_name: str
++    source_state_code: str
++    target_state_id: int
++    target_state_name: str
++    target_state_code: str
++    name: Optional[str] = None
++    is_automatic: bool = False
++    condition_days: Optional[int] = None
++    condition_type: Optional[str] = None
++    is_active: bool = True
++
++
++class WorkflowDesignerResponse(BaseModel):
++    """Datos completos del workflow para el diseñador visual."""
++    states: List[WorkflowStateResponse] = []
++    transitions: List[WorkflowTransitionResponse] = []
++    state_process_counts: Dict[int, int] = {}
++    total_active_processes: int = 0
++    tenant_name: str = ""
