@@ -63,6 +63,13 @@ EXPECTED_COLUMNS = {
         ("city", "VARCHAR(100)"),
         ("department", "VARCHAR(100)"),
     ],
+    # Fechas del Auto de Archivo y la Constancia Secretarial.
+    # Equivale a la migración Alembic 009_fechas_documentos.
+    "obligations": [
+        ("paid_date", "DATE"),
+        ("notification_date", "DATE"),
+        ("executory_date", "DATE"),
+    ],
     # Las demás tablas existentes ya tienen todas sus columnas correctas.
     # Si en el futuro se agregan columnas a modelos existentes, añadir aquí.
 }

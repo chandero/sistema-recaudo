@@ -396,6 +396,23 @@ export const documentService = {
       responseType: 'blob'
     });
     return response.data;
+  },
+
+  // Auto de Archivo (GD-F.03) y Constancia Secretarial (GD-F.01)
+  previewAutoArchivo(obligationIds) {
+    return apiClient.post('/documents/auto-archivo/preview', { obligation_ids: obligationIds })
+  },
+
+  previewConstancia(obligationIds) {
+    return apiClient.post('/documents/constancia/preview', { obligation_ids: obligationIds })
+  },
+
+  generarAutoArchivo(payload) {
+    return apiClient.post('/documents/auto-archivo/generate', payload, { responseType: 'blob' })
+  },
+
+  generarConstancia(payload) {
+    return apiClient.post('/documents/constancia/generate', payload, { responseType: 'blob' })
   }
 };
 

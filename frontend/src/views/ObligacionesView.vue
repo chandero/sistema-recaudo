@@ -179,6 +179,34 @@
               placeholder="Seleccione un estado"
             />
           </div>
+          <!-- Fechas que alimentan el Auto de Archivo y la Constancia Secretarial -->
+          <div class="field">
+            <label for="paidDate">Fecha de Pago Total</label>
+            <Calendar
+              id="paidDate"
+              v-model="obligation.paidDate"
+              dateFormat="dd/mm/yy"
+              showClear
+            />
+          </div>
+          <div class="field">
+            <label for="notificationDate">Fecha de Notificación</label>
+            <Calendar
+              id="notificationDate"
+              v-model="obligation.notificationDate"
+              dateFormat="dd/mm/yy"
+              showClear
+            />
+          </div>
+          <div class="field">
+            <label for="executoryDate">Fecha de Ejecutoria</label>
+            <Calendar
+              id="executoryDate"
+              v-model="obligation.executoryDate"
+              dateFormat="dd/mm/yy"
+              showClear
+            />
+          </div>
         </template>
       </FormWrapper>
     </Dialog>
@@ -268,6 +296,9 @@ const obligation = ref({
   amount: null,
   issueDate: null,
   dueDate: null,
+  paidDate: null,
+  notificationDate: null,
+  executoryDate: null,
   status: 'pending'
 });
 
@@ -308,6 +339,19 @@ const toIsoDate = (value) => {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 };
 
+const toIsoDateOnly = (value) => {
+  // Los campos DATE del backend rechazan un datetime completo: se envía
+  // 'AAAA-MM-DD' en zona local para no correr el día con las horas.
+  if (!value) return null;
+  const fecha = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(fecha.getTime())) return null;
+  return [
+    fecha.getFullYear(),
+    String(fecha.getMonth() + 1).padStart(2, '0'),
+    String(fecha.getDate()).padStart(2, '0')
+  ].join('-');
+};
+
 const mapApiObligation = (apiObligation) => {
   const client = clients.value.find((item) => item.id === apiObligation.client_id);
   return {
@@ -319,6 +363,9 @@ const mapApiObligation = (apiObligation) => {
     currency: apiObligation.currency || 'COP',
     issueDate: apiObligation.issue_date,
     dueDate: apiObligation.due_date,
+    paidDate: apiObligation.paid_date,
+    notificationDate: apiObligation.notification_date,
+    executoryDate: apiObligation.executory_date,
     status: apiObligation.status,
     type: apiObligation.type || 'invoice',
     processId: apiObligation.process_id
@@ -330,6 +377,9 @@ const buildPayload = () => ({
   currency: 'COP',
   issue_date: toIsoDate(obligation.value.issueDate),
   due_date: toIsoDate(obligation.value.dueDate),
+  paid_date: toIsoDateOnly(obligation.value.paidDate),
+  notification_date: toIsoDateOnly(obligation.value.notificationDate),
+  executory_date: toIsoDateOnly(obligation.value.executoryDate),
   status: obligation.value.status,
   type: 'invoice',
   description: obligation.value.concept,
@@ -381,6 +431,9 @@ const openNewObligation = () => {
     amount: null,
     issueDate: new Date(),
     dueDate: null,
+    paidDate: null,
+    notificationDate: null,
+    executoryDate: null,
     status: 'pending'
   };
   submitted.value = false;
@@ -416,7 +469,10 @@ const editObligation = (currentObligation) => {
   obligation.value = {
     ...currentObligation,
     issueDate: toDate(currentObligation.issueDate),
-    dueDate: toDate(currentObligation.dueDate)
+    dueDate: toDate(currentObligation.dueDate),
+    paidDate: toDate(currentObligation.paidDate),
+    notificationDate: toDate(currentObligation.notificationDate),
+    executoryDate: toDate(currentObligation.executoryDate)
   };
   obligationDialog.value = true;
 };

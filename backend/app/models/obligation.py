@@ -36,6 +36,12 @@ class ObligationBase(SQLModel):
     radicado_number: Optional[str] = Field(default=None, max_length=100, index=True)
     resolution_assigned_at: Optional[datetime] = Field(default=None)
     resolution_observations: Optional[str] = Field(default=None, max_length=1000)
+    # Fechas que exigen el Auto de Archivo y la Constancia Secretarial.
+    # paid_date puede derivarse del historial del proceso, pero se persiste
+    # cuando el funcionario la corrige al generar el documento.
+    paid_date: Optional[date] = Field(default=None)
+    notification_date: Optional[date] = Field(default=None)
+    executory_date: Optional[date] = Field(default=None)
 
 
 class Obligation(ObligationBase, table=True):

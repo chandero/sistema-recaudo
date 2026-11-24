@@ -87,6 +87,24 @@
                 :disabled="procesosSeleccionados.length === 0"
                 outlined
               />
+              <Button
+                label="Auto de Archivo"
+                icon="pi pi-folder-open"
+                @click="abrirDialogoDocumentos('auto_archivo')"
+                severity="warning"
+                :loading="cargandoVistaPrevia"
+                :disabled="procesosSeleccionados.length === 0"
+                outlined
+              />
+              <Button
+                label="Constancia Secretarial"
+                icon="pi pi-verified"
+                @click="abrirDialogoDocumentos('constancia_secretarial')"
+                severity="secondary"
+                :loading="cargandoVistaPrevia"
+                :disabled="procesosSeleccionados.length === 0"
+                outlined
+              />
               <Button 
                 label="Asignar Resoluciones" 
                 icon="pi pi-file-export" 
@@ -380,13 +398,25 @@
                 {{ formatDate(slotProps.data.created_at) }}
               </template>
             </Column>
-            <Column header="Acciones" class="col-acciones" style="width: 100px">
+            <Column header="Acciones" class="col-acciones" style="width: 170px">
               <template #body="slotProps">
                 <Button 
                   icon="pi pi-eye" 
                   class="p-button-rounded p-button-outlined p-button-info p-button-sm"
                   @click="verDetalle(slotProps.data)"
                   v-tooltip.top="'Ver Detalle'"
+                />
+                <Button
+                  icon="pi pi-folder-open"
+                  class="p-button-rounded p-button-outlined p-button-warning p-button-sm"
+                  @click="abrirDialogoDocumentos('auto_archivo', [slotProps.data])"
+                  v-tooltip.top="'Generar Auto de Archivo'"
+                />
+                <Button
+                  icon="pi pi-verified"
+                  class="p-button-rounded p-button-outlined p-button-secondary p-button-sm"
+                  @click="abrirDialogoDocumentos('constancia_secretarial', [slotProps.data])"
+                  v-tooltip.top="'Generar Constancia Secretarial'"
                 />
               </template>
             </Column>
@@ -543,6 +573,131 @@
         </template>
       </Dialog>
 
+      <!-- Dialog: Auto de Archivo / Constancia Secretarial -->
+      <Dialog
+        v-model:visible="documentosDialogVisible"
+        modal
+        :header="dialogoDocumentosTitulo"
+        :style="{ width: '1150px' }"
+        :breakpoints="{ '1200px': '95vw' }"
+      >
+        <div class="flex flex-column gap-4">
+          <Message v-if="!documentosListos" severity="warn">
+            <i class="pi pi-exclamation-triangle mr-2"></i>
+            Hay obligaciones con datos faltantes. Complete las fechas marcadas en rojo
+            antes de generar; el sistema no emite documentos con campos vacíos.
+          </Message>
+          <Message v-else severity="success">
+            <i class="pi pi-check-circle mr-2"></i>
+            {{ documentosFilas.length }} obligación(es) listas para generar.
+          </Message>
+
+          <DataTable
+            :value="documentosFilas"
+            dataKey="obligation_id"
+            size="small"
+            stripedRows
+            responsiveLayout="scroll"
+            class="p-datatable-gridlines"
+          >
+            <Column field="resolution_number" header="Resolución" style="width: 110px" />
+            <Column header="Cliente" style="width: 240px">
+              <template #body="slotProps">
+                <div>
+                  <strong>{{ slotProps.data.client_name }}</strong>
+                  <div class="text-sm text-gray-500">{{ slotProps.data.client_identification }}</div>
+                </div>
+              </template>
+            </Column>
+            <Column
+              v-for="campo in camposFechaDocumentos"
+              :key="campo.clave"
+              :header="campo.etiqueta"
+              style="width: 170px"
+            >
+              <template #body="slotProps">
+                <InputText
+                  type="date"
+                  v-model="slotProps.data[campo.clave]"
+                  class="w-full"
+                  :class="{ 'p-invalid': campo.requerida && !slotProps.data[campo.clave] }"
+                />
+              </template>
+            </Column>
+            <Column header="Correo de destino" style="width: 230px">
+              <template #body="slotProps">
+                <InputText
+                  type="email"
+                  v-model="slotProps.data.email"
+                  class="w-full"
+                  :disabled="!documentosEnviarCorreo"
+                  :placeholder="slotProps.data.email ? '' : 'sin correo registrado'"
+                />
+              </template>
+            </Column>
+            <Column header="Estado" style="width: 220px">
+              <template #body="slotProps">
+                <Tag
+                  v-if="faltantesFila(slotProps.data).length"
+                  severity="danger"
+                  :value="faltantesFila(slotProps.data).join(', ')"
+                />
+                <Tag
+                  v-else-if="slotProps.data.advertencias && slotProps.data.advertencias.length"
+                  severity="warning"
+                  :value="slotProps.data.advertencias.join(', ')"
+                />
+                <Tag v-else severity="success" value="Listo" />
+              </template>
+            </Column>
+          </DataTable>
+
+          <div class="flex flex-wrap align-items-center gap-4">
+            <div class="flex align-items-center gap-3">
+              <label class="font-semibold">Formato</label>
+              <div class="flex align-items-center gap-2">
+                <RadioButton v-model="documentosFormato" inputId="formato-docx" value="docx" />
+                <label for="formato-docx">DOCX</label>
+              </div>
+              <div class="flex align-items-center gap-2">
+                <RadioButton v-model="documentosFormato" inputId="formato-pdf" value="pdf" />
+                <label for="formato-pdf">PDF</label>
+              </div>
+              <div class="flex align-items-center gap-2">
+                <RadioButton v-model="documentosFormato" inputId="formato-ambos" value="ambos" />
+                <label for="formato-ambos">Ambos</label>
+              </div>
+            </div>
+            <div class="flex align-items-center gap-2">
+              <Checkbox v-model="documentosEnviarCorreo" :binary="true" inputId="enviar-correo" />
+              <label for="enviar-correo">Enviar al correo del cliente</label>
+            </div>
+            <div class="flex align-items-center gap-2">
+              <Checkbox v-model="documentosPersistirFechas" :binary="true" inputId="persistir-fechas" />
+              <label for="persistir-fechas">Guardar las fechas en la obligación</label>
+            </div>
+          </div>
+        </div>
+
+        <template #footer>
+          <Button
+            label="Cancelar"
+            icon="pi pi-times"
+            class="p-button-text"
+            @click="documentosDialogVisible = false"
+          />
+          <Button
+            label="Generar"
+            icon="pi pi-download"
+            severity="primary"
+            raised
+            :loading="generandoDocumentos"
+            :disabled="!documentosListos"
+            @click="generarDocumentos"
+          />
+        </template>
+      </Dialog>
+
       <Toast position="top-right" />
     </div>
   </template>
@@ -551,7 +706,8 @@
 import { ref, computed, onMounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import Checkbox from 'primevue/checkbox';
-import api from '../services/api';
+import RadioButton from 'primevue/radiobutton';
+import api, { documentService } from '../services/api';
 
 const toast = useToast();
 
@@ -587,6 +743,37 @@ const numeroRadicadoFinal = ref(0);
 
 // Diálogos
 const asignacionDialogVisible = ref(false);
+
+// Diálogo único de Auto de Archivo y Constancia Secretarial
+const documentosDialogVisible = ref(false);
+const documentosTipo = ref('auto_archivo');
+const documentosFilas = ref([]);
+const documentosFormato = ref('docx');
+const documentosEnviarCorreo = ref(false);
+const documentosPersistirFechas = ref(false);
+const cargandoVistaPrevia = ref(false);
+const generandoDocumentos = ref(false);
+
+const TIPOS_DOCUMENTO = {
+  auto_archivo: {
+    titulo: 'Auto de Archivo — GD-F.03',
+    prefijo: 'auto_de_archivo',
+    previsualizar: (ids) => documentService.previewAutoArchivo(ids),
+    generar: (payload) => documentService.generarAutoArchivo(payload),
+    fechas: [{ clave: 'fecha_pago', etiqueta: 'Fecha de pago total', requerida: true }]
+  },
+  constancia_secretarial: {
+    titulo: 'Constancia Secretarial — GD-F.01',
+    prefijo: 'constancia_secretarial',
+    previsualizar: (ids) => documentService.previewConstancia(ids),
+    generar: (payload) => documentService.generarConstancia(payload),
+    fechas: [
+      { clave: 'fecha_constancia', etiqueta: 'Fecha de la constancia', requerida: false },
+      { clave: 'fecha_notificacion', etiqueta: 'Fecha de notificación', requerida: false },
+      { clave: 'fecha_ejecutoria', etiqueta: 'Fecha de ejecutoria', requerida: true }
+    ]
+  }
+};
 
 // Observaciones
 const observaciones = ref('');
@@ -633,6 +820,12 @@ const procesosElegibles = computed(() =>
 
 const procesosConResolucion = computed(() =>
   procesosFiltrados.value.filter(p => p.resolution_number && p.resolution_date)
+);
+
+const camposFechaDocumentos = computed(() => TIPOS_DOCUMENTO[documentosTipo.value].fechas);
+
+const dialogoDocumentosTitulo = computed(
+  () => `${TIPOS_DOCUMENTO[documentosTipo.value].titulo} (${documentosFilas.value.length} obligación(es))`
 );
 
 // Métodos
@@ -743,6 +936,143 @@ const generarCorrespondencia = async () => {
     toast.add({ severity: 'error', summary: 'Error', detail, life: 6000 });
   } finally {
     generandoCorrespondencia.value = false;
+  }
+};
+
+const descargarBlob = (response, filename, mimeType) => {
+  const blobUrl = URL.createObjectURL(new Blob([response.data], { type: mimeType }));
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
+};
+
+const detalleErrorBlob = async (error, mensajeBase) => {
+  // Las respuestas binarias traen el error como Blob con un JSON dentro.
+  if (error.response?.data instanceof Blob) {
+    try {
+      const cuerpo = JSON.parse(await error.response.data.text());
+      return cuerpo.detail || mensajeBase;
+    } catch (_) {
+      return mensajeBase;
+    }
+  }
+  return error.response?.data?.detail || mensajeBase;
+};
+
+const faltantesFila = (fila) => {
+  // Se recalcula contra lo que el funcionario digitó, no contra la
+  // previsualización, porque las fechas pueden haber cambiado en el diálogo.
+  const faltan = [];
+  if (!fila.resolution_number) faltan.push('sin número de resolución');
+  if (!fila.resolution_date) faltan.push('sin fecha de resolución');
+  if (documentosTipo.value === 'auto_archivo' && !fila.fecha_pago) {
+    faltan.push('sin fecha de pago total');
+  }
+  if (documentosTipo.value === 'constancia_secretarial' && !fila.fecha_ejecutoria) {
+    faltan.push('sin fecha de ejecutoria');
+  }
+  return faltan;
+};
+
+const documentosListos = computed(() =>
+  documentosFilas.value.length > 0 &&
+  documentosFilas.value.every(fila => faltantesFila(fila).length === 0)
+);
+
+const abrirDialogoDocumentos = async (tipo, filas) => {
+  const seleccion = (filas?.length ? filas : procesosSeleccionados.value).filter(f => f.obligation_id);
+  if (!seleccion.length) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Selección vacía',
+      detail: 'Seleccione al menos una obligación para generar el documento',
+      life: 5000
+    });
+    return;
+  }
+
+  documentosTipo.value = tipo;
+  cargandoVistaPrevia.value = true;
+  try {
+    const response = await TIPOS_DOCUMENTO[tipo].previsualizar(seleccion.map(f => f.obligation_id));
+    documentosFilas.value = (response.data || []).map(fila => ({
+      ...fila,
+      fecha_pago: fila.fechas?.fecha_pago || '',
+      fecha_notificacion: fila.fechas?.fecha_notificacion || '',
+      fecha_constancia: fila.fechas?.fecha_constancia || '',
+      fecha_ejecutoria: fila.fechas?.fecha_ejecutoria || '',
+      email: fila.email || ''
+    }));
+    documentosEnviarCorreo.value = false;
+    documentosDialogVisible.value = true;
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: await detalleErrorBlob(error, 'No se pudo cargar la previsualización'),
+      life: 6000
+    });
+  } finally {
+    cargandoVistaPrevia.value = false;
+  }
+};
+
+const generarDocumentos = async () => {
+  const tipo = TIPOS_DOCUMENTO[documentosTipo.value];
+  const fechas = {};
+  const destinatarios = {};
+  documentosFilas.value.forEach(fila => {
+    fechas[fila.obligation_id] = {
+      fecha_pago: fila.fecha_pago || null,
+      fecha_notificacion: fila.fecha_notificacion || null,
+      fecha_constancia: fila.fecha_constancia || null,
+      fecha_ejecutoria: fila.fecha_ejecutoria || null
+    };
+    destinatarios[fila.obligation_id] = fila.email || '';
+  });
+
+  generandoDocumentos.value = true;
+  try {
+    const response = await tipo.generar({
+      obligation_ids: documentosFilas.value.map(fila => fila.obligation_id),
+      formato: documentosFormato.value,
+      fechas,
+      destinatarios,
+      persistir_fechas: documentosPersistirFechas.value,
+      enviar_correo: documentosEnviarCorreo.value
+    });
+    const stamp = new Date().toISOString().slice(0, 10);
+    descargarBlob(response, `correspondencia_${tipo.prefijo}_${stamp}.zip`, 'application/zip');
+
+    const enviados = Number(response.headers?.['x-email-sent'] || 0);
+    const fallidos = Number(response.headers?.['x-email-failed'] || 0);
+    let detail = `ZIP generado con ${documentosFilas.value.length} obligación(es) en formato ${documentosFormato.value}`;
+    if (documentosEnviarCorreo.value) {
+      detail += ` · correos enviados: ${enviados}, fallidos: ${fallidos}`;
+    }
+    documentosDialogVisible.value = false;
+    toast.add({
+      severity: documentosEnviarCorreo.value && fallidos > 0 ? 'warn' : 'success',
+      summary: tipo.titulo,
+      detail,
+      life: 7000
+    });
+    if (documentosPersistirFechas.value) {
+      loadProcesos();
+    }
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: await detalleErrorBlob(error, 'No se pudo generar el documento'),
+      life: 7000
+    });
+  } finally {
+    generandoDocumentos.value = false;
   }
 };
 

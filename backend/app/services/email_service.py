@@ -2,12 +2,19 @@
 Servicio para envío de correos electrónicos
 Utiliza plantillas y variables dinámicas
 """
+import mimetypes
 import smtplib
 from html import escape
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from jinja2 import Template
+
+from app.core.logging.logger import get_logger
+
+logger = get_logger(__name__)
 
 class EmailService:
     
@@ -21,6 +28,18 @@ class EmailService:
             raise Exception(f"Error al renderizar plantilla de correo: {str(e)}")
 
     @staticmethod
+    def _adjuntar(msg: MIMEMultipart, nombre: str, contenido: bytes, mimetype: Optional[str] = None) -> None:
+        """Adjunta un archivo al correo usando el tipo MIME correcto."""
+        tipo_calculado, _ = mimetypes.guess_type(nombre)
+        tipo = mimetype or tipo_calculado or "application/octet-stream"
+        principal, _, subtipo = tipo.partition("/")
+        parte = MIMEBase(principal or "application", subtipo or "octet-stream")
+        parte.set_payload(contenido)
+        encoders.encode_base64(parte)
+        parte.add_header("Content-Disposition", "attachment", filename=nombre)
+        msg.attach(parte)
+
+    @staticmethod
     def send_email(
         to_email: str,
         subject: str,
@@ -29,13 +48,22 @@ class EmailService:
         smtp_port: int,
         smtp_user: str,
         smtp_password: str,
-        from_email: str = None
+        from_email: str = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
     ) -> bool:
-        """Envía un correo electrónico"""
+        """
+        Envía un correo electrónico.
+
+        Args:
+            attachments: Lista opcional de {'filename', 'content', 'mimetype'},
+                con 'content' en bytes.
+        """
         if not from_email:
             from_email = smtp_user
-            
-        msg = MIMEMultipart('alternative')
+
+        # Un correo con adjuntos debe ser multipart/mixed; 'alternative' solo
+        # admite variantes del mismo cuerpo.
+        msg = MIMEMultipart('mixed' if attachments else 'alternative')
         msg['Subject'] = subject
         msg['From'] = from_email
         msg['To'] = to_email
@@ -43,6 +71,14 @@ class EmailService:
         # Adjuntar contenido HTML
         part = MIMEText(html_content, 'html')
         msg.attach(part)
+
+        for adjunto in attachments or []:
+            EmailService._adjuntar(
+                msg,
+                adjunto.get("filename", "documento"),
+                adjunto.get("content", b""),
+                adjunto.get("mimetype"),
+            )
         
         try:
             server = smtplib.SMTP(smtp_host, smtp_port)
@@ -51,8 +87,31 @@ class EmailService:
             server.sendmail(from_email, to_email, msg.as_string())
             server.quit()
             return True
-        except Exception:
+        except Exception as error:
+            logger.error(
+                module="email",
+                action="send_failed",
+                message=f"No se pudo enviar el correo a {to_email}: {str(error)}",
+                data={"destinatario": to_email, "asunto": subject, "error": str(error)}
+            )
             return False
+
+    @staticmethod
+    def send_document_email(
+        to_email: str,
+        subject: str,
+        html_content: str,
+        attachments: List[Dict[str, Any]],
+        smtp_config: Dict[str, Any]
+    ) -> bool:
+        """Envía un documento generado con sus adjuntos."""
+        return EmailService.send_email(
+            to_email=to_email,
+            subject=subject,
+            html_content=html_content,
+            attachments=attachments,
+            **smtp_config,
+        )
 
     @staticmethod
     def send_user_invitation(to_email: str, full_name: str, invitation_url: str, smtp_config: Dict[str, Any]) -> bool:

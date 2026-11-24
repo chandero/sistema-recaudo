@@ -38,3 +38,6 @@ auditoria/produccion/copia_servidor/
 .qoder/
 # Datos locales del entorno de desarrollo
 backend/test.db
+# Formatos oficiales recibidos con datos reales de deudores.
+# Solo se versionan las plantillas convertidas en backend/app/uploads/templates/
+plantillas_nuevas/

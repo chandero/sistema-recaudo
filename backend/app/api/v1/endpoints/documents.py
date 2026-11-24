@@ -10,18 +10,21 @@ import glob
 import re
 import zipfile
 import subprocess
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, date
+from html import escape
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlmodel import Session, select
+from sqlmodel import Session, select, desc
 from pydantic import BaseModel
 from num2words import num2words
 from pypdf import PdfWriter
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.dependencies import get_current_active_user
+from app.core.logging.logger import get_logger
 from app.models.user import User
 from app.models.document import DocumentTemplate, GeneratedDocument
 from app.schemas.document import (
@@ -31,12 +34,16 @@ from app.schemas.document import (
     BatchGenerationRequest,
     GeneratedDocumentResponse
 )
-from app.models.process import CobroProcess
+from app.models.process import CobroProcess, ProcessHistory
 from app.models.client import Client
 from app.models.obligation import Obligation
+from app.models.workflow import WorkflowState, WorkflowStateCode
 from app.services.document_generation_service import DocumentGenerationService
+from app.services.email_service import EmailService
 
 router = APIRouter()
+
+logger = get_logger(__name__)
 
 UPLOAD_DIR = "app/uploads/templates"
 OUTPUT_DIR = "app/uploads/generated"
@@ -83,6 +90,477 @@ def _correspondence_context(obligation: Obligation, client: Client) -> dict:
         "deuda_letras": _amount_in_words(obligation.amount),
         "fecha_corte": cutoff_date,
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# Auto de Archivo y Constancia Secretarial
+# ─────────────────────────────────────────────────────────────
+
+# Nombres de los meses en español y con inicial mayúscula, como exigen los
+# formatos oficiales ("09 de Abril de 2025").
+_MESES_ES = (
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+)
+
+# Pasar a alguno de estos estados equivale a que la obligación fue cancelada.
+_ESTADOS_DE_PAGO = (WorkflowStateCode.PAGADO, WorkflowStateCode.ARCHIVADO)
+
+# Plantilla registrada, nombre visible y prefijo de archivo por tipo de documento.
+REGISTRO_CORRESPONDENCIA: Dict[str, Dict[str, str]] = {
+    "auto_archivo": {
+        "code": "AUTO_ARCHIVO",
+        "nombre": "Auto de Archivo",
+        "prefijo": "auto_archivo",
+    },
+    "constancia_secretarial": {
+        "code": "CONSTANCIA_SECRETARIAL",
+        "nombre": "Constancia Secretarial",
+        "prefijo": "constancia_secretarial",
+    },
+}
+
+
+class FechasPorObligacion(BaseModel):
+    """Fechas que el funcionario puede corregir antes de generar."""
+    fecha_pago: Optional[date] = None
+    fecha_notificacion: Optional[date] = None
+    fecha_constancia: Optional[date] = None
+    fecha_ejecutoria: Optional[date] = None
+
+
+class CorrespondenciaSolicitada(BaseModel):
+    """Solicitud de generación individual (un id) o por selección múltiple."""
+    obligation_ids: List[int]
+    formato: str = "docx"
+    fechas: Dict[int, FechasPorObligacion] = {}
+    persistir_fechas: bool = False
+    enviar_correo: bool = False
+    destinatarios: Dict[int, str] = {}
+
+
+def _fecha_larga_es(fecha: Optional[date]) -> str:
+    """Formatea una fecha como '09 de Abril de 2025'."""
+    if not fecha:
+        return ""
+    return f"{fecha.day:02d} de {_MESES_ES[fecha.month - 1]} de {fecha.year}"
+
+
+def _iso(fecha: Optional[date]) -> str:
+    """Formatea una fecha como '2025-03-04', el formato del Auto de Archivo."""
+    return fecha.isoformat() if fecha else ""
+
+
+def _resolver_fecha_pago(session: Session, obligation: Obligation) -> Optional[date]:
+    """
+    Fecha de pago total de la obligación.
+
+    Prioriza la fecha guardada en la obligación; si no existe, usa el último
+    movimiento del proceso hacia PAGADO o ARCHIVADO. El resultado se puede
+    sobrescribir desde el frontend.
+    """
+    if obligation.paid_date:
+        return obligation.paid_date
+    if not obligation.process_id:
+        return None
+    movimiento = session.exec(
+        select(ProcessHistory.created_at)
+        .join(WorkflowState, WorkflowState.id == ProcessHistory.new_state_id)
+        .where(
+            ProcessHistory.process_id == obligation.process_id,
+            WorkflowState.code.in_(_ESTADOS_DE_PAGO),
+        )
+        .order_by(desc(ProcessHistory.created_at))
+    ).first()
+    return movimiento.date() if movimiento else None
+
+
+def _obtener_plantilla_activa(
+    session: Session,
+    tenant_id: int,
+    code: str,
+    template_id: Optional[int] = None,
+) -> DocumentTemplate:
+    """Busca la plantilla registrada del tenant, por código o por id explícito."""
+    consulta = select(DocumentTemplate).where(
+        DocumentTemplate.tenant_id == tenant_id,
+        DocumentTemplate.is_active == True,  # noqa: E712
+    )
+    consulta = (
+        consulta.where(DocumentTemplate.id == template_id)
+        if template_id
+        else consulta.where(DocumentTemplate.code == code)
+    )
+    plantilla = session.exec(consulta).first()
+    if not plantilla:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No existe una plantilla activa con código {code}",
+        )
+    return plantilla
+
+
+def _filas_obligaciones(session: Session, tenant_id: int, obligation_ids: List[int]):
+    """Obligaciones con su cliente, validando que pertenezcan al tenant."""
+    filas = session.exec(
+        select(Obligation, Client)
+        .join(Client, Obligation.client_id == Client.id)
+        .where(
+            Obligation.id.in_(obligation_ids),
+            Client.tenant_id == tenant_id,
+        )
+        .order_by(Obligation.resolution_number, Obligation.id)
+    ).all()
+    if len(filas) != len(set(obligation_ids)):
+        raise HTTPException(
+            status_code=400,
+            detail="Algunas obligaciones no existen o no pertenecen al tenant",
+        )
+    return filas
+
+
+def _resolver_fechas(
+    session: Session,
+    tipo: str,
+    obligation: Obligation,
+    override: Optional[FechasPorObligacion],
+) -> Dict[str, Optional[date]]:
+    """Fecha efectiva por campo: lo digitado manda sobre lo almacenado."""
+    override = override or FechasPorObligacion()
+    if tipo == "auto_archivo":
+        return {"fecha_pago": override.fecha_pago or _resolver_fecha_pago(session, obligation)}
+    fecha_notificacion = override.fecha_notificacion or obligation.notification_date
+    return {
+        "fecha_notificacion": fecha_notificacion,
+        "fecha_constancia": override.fecha_constancia or fecha_notificacion or date.today(),
+        "fecha_ejecutoria": override.fecha_ejecutoria or obligation.executory_date,
+    }
+
+
+def _contexto_documento(
+    tipo: str,
+    obligation: Obligation,
+    client: Client,
+    fechas: Dict[str, Optional[date]],
+) -> Dict[str, str]:
+    """Variables docxtpl de la plantilla correspondiente."""
+    contexto = {
+        "numero_resolucion": obligation.resolution_number or "",
+        "cuenta_usuario": obligation.description or str(obligation.id),
+        "nombre_usuario": client.name,
+        "documento_usuario": client.identification,
+        "direccion_usuario": client.address or "",
+    }
+    if tipo == "auto_archivo":
+        contexto["fecha_resolucion"] = _iso(obligation.resolution_date)
+        contexto["fecha_pago"] = _iso(fechas.get("fecha_pago"))
+    else:
+        contexto["fecha_constancia"] = _fecha_larga_es(fechas.get("fecha_constancia"))
+        contexto["fecha_resolucion_larga"] = _fecha_larga_es(obligation.resolution_date)
+        contexto["fecha_ejecutoria_larga"] = _fecha_larga_es(fechas.get("fecha_ejecutoria"))
+    return contexto
+
+
+def _problemas_documento(
+    tipo: str,
+    obligation: Obligation,
+    fechas: Dict[str, Optional[date]],
+) -> List[str]:
+    """Falta de datos que impide emitir el documento: no se genera con campos vacíos."""
+    problemas = []
+    if not obligation.resolution_number:
+        problemas.append("sin número de resolución")
+    if not obligation.resolution_date:
+        problemas.append("sin fecha de resolución")
+    if tipo == "auto_archivo" and not fechas.get("fecha_pago"):
+        problemas.append("sin fecha de pago total")
+    if tipo == "constancia_secretarial" and not fechas.get("fecha_ejecutoria"):
+        problemas.append("sin fecha de ejecutoria")
+    return problemas
+
+
+def _convertir_docx_a_pdf(docx_path: str, pdf_path: str, perfil_dir: str) -> None:
+    """
+    Convierte con un perfil de LibreOffice aislado por documento.
+
+    Reutilizar el perfil entre conversiones deja páginas en blanco de sobra,
+    el mismo defecto que se corrigió en la impresión por rango.
+    """
+    os.makedirs(perfil_dir, exist_ok=True)
+    resultado = subprocess.run(
+        [
+            "libreoffice",
+            "--headless",
+            f"-env:UserInstallation=file://{os.path.abspath(perfil_dir)}",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            os.path.dirname(pdf_path),
+            docx_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if resultado.returncode != 0 or not os.path.exists(pdf_path):
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"No se pudo convertir {os.path.basename(docx_path)} a PDF: "
+                f"{resultado.stderr.strip()}"
+            ),
+        )
+
+
+def _config_smtp() -> Optional[Dict[str, Any]]:
+    """Parámetros SMTP de la plataforma, o None si no está configurado."""
+    if not all((settings.SMTP_SERVER, settings.SMTP_PORT, settings.SMTP_USER, settings.SMTP_PASSWORD)):
+        return None
+    return {
+        "smtp_host": settings.SMTP_SERVER,
+        "smtp_port": settings.SMTP_PORT,
+        "smtp_user": settings.SMTP_USER,
+        "smtp_password": settings.SMTP_PASSWORD,
+        "from_email": settings.SMTP_FROM_EMAIL,
+    }
+
+
+def _cuerpo_correo(nombre_documento: str, obligation: Obligation, client: Client) -> str:
+    """Cuerpo HTML mínimo del correo de remisión del documento."""
+    return f"""<h2>{escape(nombre_documento)}</h2>
+<p>Se adjunta el documento generado por el sistema de recaudo del Municipio de
+Girón para la obligación N.º {escape(str(obligation.id))}.</p>
+<ul>
+  <li>Resolución: {escape(obligation.resolution_number or "")}</li>
+  <li>Titular: {escape(client.name)}</li>
+  <li>Identificación: {escape(client.identification)}</li>
+</ul>
+<p>Este mensaje es generado automáticamente; el documento tiene plena validez
+una vez surtido el trámite correspondiente.</p>"""
+
+
+def _persistir_fechas(
+    obligation: Obligation,
+    tipo: str,
+    fechas: Dict[str, Optional[date]],
+) -> None:
+    """Guarda en la obligación las fechas efectivas usadas en el documento."""
+    if tipo == "auto_archivo":
+        if fechas.get("fecha_pago"):
+            obligation.paid_date = fechas["fecha_pago"]
+        return
+    if fechas.get("fecha_notificacion"):
+        obligation.notification_date = fechas["fecha_notificacion"]
+    if fechas.get("fecha_ejecutoria"):
+        obligation.executory_date = fechas["fecha_ejecutoria"]
+
+
+def _preview_correspondencia(
+    tipo: str,
+    session: Session,
+    tenant_id: int,
+    obligation_ids: List[int],
+) -> List[Dict[str, Any]]:
+    """Devuelve por fila el contexto resuelto y los faltantes, sin generar nada."""
+    if tipo not in REGISTRO_CORRESPONDENCIA:
+        raise HTTPException(status_code=400, detail=f"Tipo de documento no reconocido: {tipo}")
+    if not obligation_ids:
+        raise HTTPException(status_code=400, detail="Seleccione al menos una obligación")
+
+    filas = _filas_obligaciones(session, tenant_id, obligation_ids)
+    vista = []
+    for obligation, client in filas:
+        fechas = _resolver_fechas(session, tipo, obligation, None)
+        advertencias = []
+        if not client.email:
+            advertencias.append("el cliente no tiene correo registrado")
+        if tipo == "auto_archivo" and not obligation.paid_date and not fechas.get("fecha_pago"):
+            advertencias.append("no hay historial de pago; digite la fecha manualmente")
+        vista.append({
+            "obligation_id": obligation.id,
+            "resolution_number": obligation.resolution_number or "",
+            "resolution_date": _iso(obligation.resolution_date),
+            "client_name": client.name,
+            "client_identification": client.identification,
+            "email": client.email or "",
+            "fechas": {clave: _iso(valor) for clave, valor in fechas.items()},
+            "contexto": _contexto_documento(tipo, obligation, client, fechas),
+            "problemas": _problemas_documento(tipo, obligation, fechas),
+            "advertencias": advertencias,
+        })
+    return vista
+
+
+def _generar_correspondencia(
+    tipo: str,
+    request: CorrespondenciaSolicitada,
+    session: Session,
+    current_user: User,
+):
+    """Genera, registra, empaqueta y opcionalmente corrée el documento indicado."""
+    registro = REGISTRO_CORRESPONDENCIA.get(tipo)
+    if not registro:
+        raise HTTPException(status_code=400, detail=f"Tipo de documento no reconocido: {tipo}")
+    if not request.obligation_ids:
+        raise HTTPException(status_code=400, detail="Seleccione al menos una obligación")
+    if request.formato not in {"docx", "pdf", "ambos"}:
+        raise HTTPException(status_code=400, detail="El formato debe ser docx, pdf o ambos")
+
+    plantilla = _obtener_plantilla_activa(session, current_user.tenant_id, registro["code"])
+    filas = _filas_obligaciones(session, current_user.tenant_id, request.obligation_ids)
+
+    resueltos = []
+    bloqueadas = []
+    for obligation, client in filas:
+        fechas = _resolver_fechas(session, tipo, obligation, request.fechas.get(obligation.id))
+        problemas = _problemas_documento(tipo, obligation, fechas)
+        if problemas:
+            bloqueadas.append(f"obligación {obligation.id}: {', '.join(problemas)}")
+            continue
+        resueltos.append((obligation, client, fechas))
+    if bloqueadas:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No se puede generar con faltantes en "
+                f"{len(bloqueadas)} obligación(es): {'; '.join(bloqueadas[:15])}"
+            ),
+        )
+
+    producir_docx = request.formato in {"docx", "ambos"}
+    producir_pdf = request.formato in {"pdf", "ambos"}
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    batch_dir = os.path.join(
+        OUTPUT_DIR, f"{registro['prefijo']}_{current_user.tenant_id}_{stamp}"
+    )
+    os.makedirs(batch_dir, exist_ok=True)
+    template_path = os.path.join(batch_dir, "template.docx")
+    with open(template_path, "wb") as template_file:
+        template_file.write(plantilla.content)
+
+    adjuntos: Dict[int, List[Dict[str, Any]]] = {}
+    documentos: Dict[int, List[GeneratedDocument]] = {}
+    for indice, (obligation, client, fechas) in enumerate(resueltos):
+        contexto = _contexto_documento(tipo, obligation, client, fechas)
+        base = (
+            f"{registro['prefijo']}_"
+            f"{_safe_filename(obligation.resolution_number)}_"
+            f"{_safe_filename(client.identification)}"
+        )
+        docx_path = os.path.join(batch_dir, f"{base}.docx")
+        DocumentGenerationService.render_template(template_path, contexto, docx_path)
+
+        archivos = [(docx_path, "DOCX")] if producir_docx else []
+        if producir_pdf:
+            pdf_path = os.path.join(batch_dir, f"{base}.pdf")
+            _convertir_docx_a_pdf(
+                docx_path,
+                pdf_path,
+                os.path.join(batch_dir, f"perfil-{indice}"),
+            )
+            archivos.append((pdf_path, "PDF"))
+
+        fila_adjuntos = []
+        fila_documentos = []
+        for ruta, clase in archivos:
+            with open(ruta, "rb") as archivo:
+                contenido = archivo.read()
+            nombre = os.path.basename(ruta)
+            fila_adjuntos.append({"filename": nombre, "content": contenido})
+            fila_documentos.append(GeneratedDocument(
+                tenant_id=current_user.tenant_id,
+                process_id=obligation.process_id,
+                template_id=plantilla.id,
+                client_id=obligation.client_id,
+                obligation_id=obligation.id,
+                file_path=ruta,
+                filename=nombre,
+                document_type=clase,
+                file_size=len(contenido),
+                variables_used=contexto,
+                created_by=current_user.id,
+                resolution_number=obligation.resolution_number,
+            ))
+        adjuntos[obligation.id] = fila_adjuntos
+        documentos[obligation.id] = fila_documentos
+        session.add_all(fila_documentos)
+
+    if request.persistir_fechas:
+        for obligation, _, fechas in resueltos:
+            _persistir_fechas(obligation, tipo, fechas)
+
+    zip_path = os.path.join(
+        OUTPUT_DIR, f"correspondencia_{registro['prefijo']}_{stamp}.zip"
+    )
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for fila_adjuntos in adjuntos.values():
+            for adjunto in fila_adjuntos:
+                zip_file.write(os.path.join(batch_dir, adjunto["filename"]), adjunto["filename"])
+
+    enviados = 0
+    fallidos = 0
+    if request.enviar_correo:
+        smtp_config = _config_smtp()
+        if not smtp_config:
+            raise HTTPException(
+                status_code=400,
+                detail="El servidor de correo no está configurado en la plataforma",
+            )
+        for obligation, client, _ in resueltos:
+            destinatario = (
+                request.destinatarios.get(obligation.id) or client.email or ""
+            ).strip()
+            fila_adjuntos = adjuntos[obligation.id]
+            if not destinatario:
+                fallidos += 1
+                logger.warning(
+                    module="document_generation",
+                    action="email_skipped",
+                    message=f"La obligación {obligation.id} no tiene correo de destino",
+                    data={"obligation_id": obligation.id, "tipo": tipo},
+                )
+                continue
+            enviado = EmailService.send_document_email(
+                to_email=destinatario,
+                subject=f"{registro['nombre']} - Resolución {obligation.resolution_number}",
+                html_content=_cuerpo_correo(registro["nombre"], obligation, client),
+                attachments=fila_adjuntos,
+                smtp_config=smtp_config,
+            )
+            if enviado:
+                enviados += 1
+                for documento in documentos[obligation.id]:
+                    documento.is_sent = True
+                    documento.sent_at = datetime.utcnow()
+            else:
+                fallidos += 1
+
+    session.commit()
+
+    logger.info(
+        module="document_generation",
+        action="correspondence_generated",
+        message=f"Se generaron {sum(len(v) for v in documentos.values())} archivo(s) de {tipo}",
+        data={
+            "tenant_id": current_user.tenant_id,
+            "tipo": tipo,
+            "obligaciones": len(resueltos),
+            "enviados": enviados,
+            "fallidos": fallidos,
+        },
+    )
+
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=os.path.basename(zip_path),
+        headers={
+            "X-Document-Count": str(len(resueltos)),
+            "X-File-Count": str(sum(len(v) for v in documentos.values())),
+            "X-Email-Sent": str(enviados),
+            "X-Email-Failed": str(fallidos),
+        },
+    )
 
 
 @router.post("/correspondence/print-range")
@@ -271,6 +749,75 @@ def generate_certified_correspondence_batch(
         filename=os.path.basename(zip_path),
         headers={"X-Document-Count": str(len(rows))},
     )
+
+
+def _correspondencia(
+    tipo: str,
+    request: CorrespondenciaSolicitada,
+    session: Session,
+    current_user: User,
+):
+    """Punto único de trazas para los cuatro endpoints de correspondencia."""
+    try:
+        return _generar_correspondencia(tipo, request, session, current_user)
+    except HTTPException:
+        raise
+    except Exception as error:
+        session.rollback()
+        logger.error(
+            module="document_generation",
+            action="correspondence_failed",
+            message=f"No se pudo generar el documento {tipo}: {str(error)}",
+            data={"tipo": tipo, "error": str(error), "traza": traceback.format_exc()},
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generando {tipo}: {str(error)}",
+        )
+
+
+@router.post("/auto-archivo/preview")
+def preview_auto_archivo(
+    request: CorrespondenceBatchRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Previsualiza el Auto de Archivo con sus fechas derivadas y faltantes."""
+    return _preview_correspondencia(
+        "auto_archivo", session, current_user.tenant_id, request.obligation_ids
+    )
+
+
+@router.post("/constancia/preview")
+def preview_constancia_secretarial(
+    request: CorrespondenceBatchRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Previsualiza la Constancia Secretarial con sus fechas y faltantes."""
+    return _preview_correspondencia(
+        "constancia_secretarial", session, current_user.tenant_id, request.obligation_ids
+    )
+
+
+@router.post("/auto-archivo/generate")
+def generate_auto_archivo(
+    request: CorrespondenciaSolicitada,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Genera el Auto de Archivo (GD-F.03) de una o varias obligaciones."""
+    return _correspondencia("auto_archivo", request, session, current_user)
+
+
+@router.post("/constancia/generate")
+def generate_constancia_secretarial(
+    request: CorrespondenciaSolicitada,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Genera la Constancia Secretarial (GD-F.01) de una o varias obligaciones."""
+    return _correspondencia("constancia_secretarial", request, session, current_user)
 
 
 @router.get("/export/excel")

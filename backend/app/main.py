@@ -30,7 +30,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Total-Count"],
+    expose_headers=[
+        "X-Total-Count",
+        # Conteo de documentos y envíos de correspondencia (Auto de Archivo,
+        # Constancia Secretarial e impresión por rango).
+        "X-Document-Count",
+        "X-File-Count",
+        "X-Email-Sent",
+        "X-Email-Failed",
+    ],
 )
 
 # Include API router

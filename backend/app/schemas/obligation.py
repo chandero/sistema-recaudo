@@ -36,6 +36,9 @@ class ObligationBase(BaseModel):
     radicado_number: Optional[str] = None
     resolution_assigned_at: Optional[datetime] = None
     resolution_observations: Optional[str] = None
+    paid_date: Optional[date] = None
+    notification_date: Optional[date] = None
+    executory_date: Optional[date] = None
 
 
 class ObligationCreate(ObligationBase):
@@ -58,6 +61,9 @@ class ObligationUpdate(BaseModel):
     radicado_number: Optional[str] = None
     resolution_assigned_at: Optional[datetime] = None
     resolution_observations: Optional[str] = None
+    paid_date: Optional[date] = None
+    notification_date: Optional[date] = None
+    executory_date: Optional[date] = None
 
 
 class ObligationResponse(ObligationBase):
