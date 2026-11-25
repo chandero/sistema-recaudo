@@ -592,6 +592,45 @@
             {{ documentosFilas.length }} obligación(es) listas para generar.
           </Message>
 
+          <!-- Asignación general: fija de una sola vez las fechas de todas las filas -->
+          <div class="asignacion-general">
+            <div class="flex align-items-start justify-content-between gap-3 flex-wrap">
+              <div>
+                <div class="font-semibold">Asignación general</div>
+                <small class="text-gray-500">
+                  Diligencie las fechas y aplíquelas a todos los registros; después puede
+                  corregir cada fila por separado. Un campo vacío no borra lo ya digitado.
+                </small>
+              </div>
+              <Button
+                label="Aplicar a todos"
+                icon="pi pi-forward"
+                size="small"
+                severity="secondary"
+                outlined
+                :disabled="!hayFechasGenerales"
+                @click="aplicarFechasGenerales"
+              />
+            </div>
+            <div class="flex flex-wrap align-items-end gap-3 mt-3">
+              <div
+                v-for="campo in camposFechaDocumentos"
+                :key="`global-${campo.clave}`"
+                class="flex flex-column gap-1"
+              >
+                <label :for="`global-${campo.clave}`" class="text-sm text-gray-600">
+                  {{ campo.etiqueta }}<span v-if="campo.requerida" class="text-red-500"> *</span>
+                </label>
+                <InputText
+                  :id="`global-${campo.clave}`"
+                  type="date"
+                  v-model="fechasGenerales[campo.clave]"
+                  style="width: 175px"
+                />
+              </div>
+            </div>
+          </div>
+
           <DataTable
             :value="documentosFilas"
             dataKey="obligation_id"
@@ -624,7 +663,7 @@
                 />
               </template>
             </Column>
-            <Column header="Correo de destino" style="width: 230px">
+            <Column header="Correo de destino (opcional)" style="width: 230px">
               <template #body="slotProps">
                 <InputText
                   type="email"
@@ -670,7 +709,7 @@
             </div>
             <div class="flex align-items-center gap-2">
               <Checkbox v-model="documentosEnviarCorreo" :binary="true" inputId="enviar-correo" />
-              <label for="enviar-correo">Enviar al correo del cliente</label>
+              <label for="enviar-correo">Enviar al correo del cliente (opcional)</label>
             </div>
             <div class="flex align-items-center gap-2">
               <Checkbox v-model="documentosPersistirFechas" :binary="true" inputId="persistir-fechas" />
@@ -751,6 +790,8 @@ const documentosFilas = ref([]);
 const documentosFormato = ref('docx');
 const documentosEnviarCorreo = ref(false);
 const documentosPersistirFechas = ref(false);
+// Fechas de la asignación general del diálogo (claves iguales a las de cada fila)
+const fechasGenerales = ref({});
 const cargandoVistaPrevia = ref(false);
 const generandoDocumentos = ref(false);
 
@@ -982,6 +1023,40 @@ const documentosListos = computed(() =>
   documentosFilas.value.every(fila => faltantesFila(fila).length === 0)
 );
 
+const hayFechasGenerales = computed(() =>
+  camposFechaDocumentos.value.some(campo => !!fechasGenerales.value[campo.clave])
+);
+
+const aplicarFechasGenerales = () => {
+  // Solo se copian los campos diligenciados: uno vacío debe dejar intactas las filas.
+  const seleccionadas = camposFechaDocumentos.value.filter(
+    campo => fechasGenerales.value[campo.clave]
+  );
+  if (!seleccionadas.length) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Nada que aplicar',
+      detail: 'Seleccione al menos una fecha en la asignación general',
+      life: 5000
+    });
+    return;
+  }
+
+  documentosFilas.value.forEach(fila => {
+    seleccionadas.forEach(campo => {
+      fila[campo.clave] = fechasGenerales.value[campo.clave];
+    });
+  });
+
+  toast.add({
+    severity: 'success',
+    summary: 'Asignación general aplicada',
+    detail: `${seleccionadas.map(campo => campo.etiqueta).join(', ')} en ` +
+      `${documentosFilas.value.length} registro(s)`,
+    life: 4000
+  });
+};
+
 const abrirDialogoDocumentos = async (tipo, filas) => {
   const seleccion = (filas?.length ? filas : procesosSeleccionados.value).filter(f => f.obligation_id);
   if (!seleccion.length) {
@@ -1007,6 +1082,7 @@ const abrirDialogoDocumentos = async (tipo, filas) => {
       email: fila.email || ''
     }));
     documentosEnviarCorreo.value = false;
+    fechasGenerales.value = {};
     documentosDialogVisible.value = true;
   } catch (error) {
     toast.add({
@@ -1049,9 +1125,14 @@ const generarDocumentos = async () => {
 
     const enviados = Number(response.headers?.['x-email-sent'] || 0);
     const fallidos = Number(response.headers?.['x-email-failed'] || 0);
+    const notaCorreo = String(response.headers?.['x-email-note'] || '');
     let detail = `ZIP generado con ${documentosFilas.value.length} obligación(es) en formato ${documentosFormato.value}`;
     if (documentosEnviarCorreo.value) {
       detail += ` · correos enviados: ${enviados}, fallidos: ${fallidos}`;
+      if (notaCorreo === 'smtp_no_configurado') {
+        detail += '. El servidor de correo no está configurado en la plataforma, así que ' +
+          'no se envió ningún documento; descargue el ZIP y remitálo manualmente.';
+      }
     }
     documentosDialogVisible.value = false;
     toast.add({
@@ -1350,6 +1431,15 @@ onMounted(() => {
 .resolution-data {
   padding: 1rem;
   border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-50);
+}
+
+/* Panel de asignación general del diálogo de Auto de Archivo / Constancia */
+.asignacion-general {
+  padding: 14px 16px;
+  border: 1px solid var(--surface-border);
+  border-left: 4px solid var(--primary-color);
   border-radius: 8px;
   background: var(--surface-50);
 }

@@ -629,7 +629,8 @@ def test_generate_cuenta_como_fallido_un_envio_error(contexto, monkeypatch):
     assert response.headers["X-Email-Failed"] == "1"
 
 
-def test_generate_sin_smtp_configurado_no_envia(contexto, monkeypatch):
+def test_generate_sin_smtp_configurado_entrega_el_zip(contexto, monkeypatch):
+    """Sin SMTP el correo es opcional: no se aborta la generación del documento."""
     monkeypatch.setattr(documents, "_config_smtp", lambda: None)
 
     response = contexto["client"].post(
@@ -641,8 +642,14 @@ def test_generate_sin_smtp_configurado_no_envia(contexto, monkeypatch):
         },
     )
 
-    assert response.status_code == 400
-    assert "correo no está configurado" in response.json()["detail"]
+    assert response.status_code == 200
+    archivos = _lista_zip(response.content)
+    assert len(archivos) == 1
+    assert archivos[0].startswith("auto_archivo_")
+    assert archivos[0].endswith(".docx")
+    assert response.headers["X-Email-Sent"] == "0"
+    assert response.headers["X-Email-Failed"] == "1"
+    assert response.headers["X-Email-Note"] == "smtp_no_configurado"
 
 
 def test_email_service_monta_adjuntos_y_no_rompe_las_invitaciones(monkeypatch):

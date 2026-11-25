@@ -553,41 +553,56 @@ def _generar_correspondencia(
 
     enviados = 0
     fallidos = 0
+    nota_correo = ""
     if request.enviar_correo:
         smtp_config = _config_smtp()
         if not smtp_config:
-            raise HTTPException(
-                status_code=400,
-                detail="El servidor de correo no está configurado en la plataforma",
+            # El correo es un extra opcional: la entrega principal es el ZIP, así que se
+            # omite el envío y se avisa por cabecera en lugar de descartar lo generado.
+            fallidos = len(resueltos)
+            nota_correo = "smtp_no_configurado"
+            logger.warning(
+                module="document_generation",
+                action="email_skipped",
+                message=(
+                    "El servidor de correo no está configurado; no se envió ningún "
+                    "documento y el ZIP se entregó normalmente"
+                ),
+                data={
+                    "tenant_id": current_user.tenant_id,
+                    "tipo": tipo,
+                    "omitidos": fallidos,
+                },
             )
-        for obligation, client, _ in resueltos:
-            destinatario = (
-                request.destinatarios.get(obligation.id) or client.email or ""
-            ).strip()
-            fila_adjuntos = adjuntos[obligation.id]
-            if not destinatario:
-                fallidos += 1
-                logger.warning(
-                    module="document_generation",
-                    action="email_skipped",
-                    message=f"La obligación {obligation.id} no tiene correo de destino",
-                    data={"obligation_id": obligation.id, "tipo": tipo},
+        else:
+            for obligation, client, _ in resueltos:
+                destinatario = (
+                    request.destinatarios.get(obligation.id) or client.email or ""
+                ).strip()
+                fila_adjuntos = adjuntos[obligation.id]
+                if not destinatario:
+                    fallidos += 1
+                    logger.warning(
+                        module="document_generation",
+                        action="email_skipped",
+                        message=f"La obligación {obligation.id} no tiene correo de destino",
+                        data={"obligation_id": obligation.id, "tipo": tipo},
+                    )
+                    continue
+                enviado = EmailService.send_document_email(
+                    to_email=destinatario,
+                    subject=f"{registro['nombre']} - Resolución {obligation.resolution_number}",
+                    html_content=_cuerpo_correo(registro["nombre"], obligation, client),
+                    attachments=fila_adjuntos,
+                    smtp_config=smtp_config,
                 )
-                continue
-            enviado = EmailService.send_document_email(
-                to_email=destinatario,
-                subject=f"{registro['nombre']} - Resolución {obligation.resolution_number}",
-                html_content=_cuerpo_correo(registro["nombre"], obligation, client),
-                attachments=fila_adjuntos,
-                smtp_config=smtp_config,
-            )
-            if enviado:
-                enviados += 1
-                for documento in documentos[obligation.id]:
-                    documento.is_sent = True
-                    documento.sent_at = datetime.utcnow()
-            else:
-                fallidos += 1
+                if enviado:
+                    enviados += 1
+                    for documento in documentos[obligation.id]:
+                        documento.is_sent = True
+                        documento.sent_at = datetime.utcnow()
+                else:
+                    fallidos += 1
 
     session.commit()
 
@@ -613,6 +628,8 @@ def _generar_correspondencia(
             "X-File-Count": str(sum(len(v) for v in documentos.values())),
             "X-Email-Sent": str(enviados),
             "X-Email-Failed": str(fallidos),
+            # Vacío salvo que el envío se haya omitido por falta de configuración.
+            "X-Email-Note": nota_correo,
         },
     )
 

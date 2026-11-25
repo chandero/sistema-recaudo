@@ -38,6 +38,9 @@ app.add_middleware(
         "X-File-Count",
         "X-Email-Sent",
         "X-Email-Failed",
+        # Motivo por el que no se envió el correo (p. ej. smtp_no_configurado), para
+        # que la pantalla pueda explicarlo sin bloquear la descarga del ZIP.
+        "X-Email-Note",
         # Aviso del reemplazo de plantilla cuando no se pudo escribir el archivo
         # espejo en disco (la copia en base de datos sí quedó aplicada).
         "X-Template-Warning",
