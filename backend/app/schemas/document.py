@@ -87,6 +87,15 @@ class GeneratedDocumentResponse(GeneratedDocumentBase):
     file_path: str
     file_size: int
     created_by: Optional[int] = None
+    # Trazas de la gestión que produjo el archivo: documento, impresion_rango,
+    # lote_correspondencia o exportacion_excel.
+    action: Optional[str] = None
+    # Entrega registrada al momento de generar: a quién se dirigió y por qué vía salió.
+    recipient_email: Optional[str] = None
+    delivery_method: Optional[str] = None
+    # Nombre del usuario que generó el documento: el histórico se consulta para
+    # saber quién diligenció unas fechas, y un id numérico no responde eso.
+    created_by_name: Optional[str] = None
     created_at: datetime
     is_sent: bool = False
     sent_at: Optional[datetime] = None

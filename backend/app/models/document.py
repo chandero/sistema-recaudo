@@ -60,6 +60,16 @@ class GeneratedDocument(GeneratedDocumentBase, table=True):
     sent_at: Optional[datetime] = Field(default=None)
     resolution_number: Optional[str] = Field(default=None, max_length=100)
     radicado_number: Optional[str] = Field(default=None, max_length=100)
+    # Qué operación del sistema produjo el archivo. Los documentos oficiales nacen de
+    # una obligación; la impresión por rango, el lote de correspondencia y el Excel
+    # cubren un intervalo, así que se distinguen por esta traza y no por el tipo.
+    action: Optional[str] = Field(default="documento", max_length=40)
+    # Correo al que efectivamente se dirigió el archivo: puede ser el del cliente o el
+    # que el funcionario digitó a mano, y ninguno de los dos queda registrado en otro lado.
+    recipient_email: Optional[str] = Field(default=None, max_length=255)
+    # Cómo salió el documento del sistema (correo, zip, impresion, descarga) y, cuando el
+    # envío falló o se omitió, por qué. is_sent solo dice si alcanzó a marcharse.
+    delivery_method: Optional[str] = Field(default=None, max_length=40)
     
     tenant: Optional["Tenant"] = Relationship()
     creator: Optional["User"] = Relationship()

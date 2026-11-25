@@ -10,6 +10,7 @@ import smtplib
 import tempfile
 import zipfile
 from datetime import date, datetime
+from typing import List
 
 import pytest
 from docx import Document
@@ -230,6 +231,7 @@ def contexto():
             yield {
                 "session": session,
                 "client": cliente_api,
+                "app": app,
                 "tenant": tenant,
                 "otro_tenant": otro,
                 "usuario": usuario,
@@ -520,6 +522,50 @@ def test_generate_ambos_convierte_pdf_y_registra_documentos(contexto, monkeypatc
     assert {registro.resolution_number for registro in registros} == {"3849"}
 
 
+def test_historial_conserva_las_fechas_impresas_y_su_autor(contexto):
+    """El histórico debe reconstruir qué fechas se imprimieron, aunque no se guardaran."""
+    constancia = contexto["obligacion_constancia"]
+    respuestas = [
+        contexto["client"].post(
+            "/documents/auto-archivo/generate",
+            json={
+                "obligation_ids": [contexto["obligacion"].id],
+                "formato": "docx",
+                "fechas": {str(contexto["obligacion"].id): {"fecha_pago": "2025-01-05"}},
+            },
+        ),
+        contexto["client"].post(
+            "/documents/constancia/generate",
+            json={
+                "obligation_ids": [constancia.id],
+                "formato": "docx",
+                "fechas": {str(constancia.id): {"fecha_constancia": "2025-05-08"}},
+            },
+        ),
+    ]
+    assert [respuesta.status_code for respuesta in respuestas] == [200, 200]
+
+    historial = contexto["client"].get("/documents/generated")
+    assert historial.status_code == 200
+    filas = historial.json()
+    assert len(filas) == 2
+    # Más reciente primero: la constancia fue la última generación.
+    assert filas[0]["obligation_id"] == constancia.id
+    assert filas[0]["variables_used"]["fecha_constancia"] == "08 de Mayo de 2025"
+    assert filas[1]["variables_used"]["fecha_pago"] == "2025-01-05"
+    assert {fila["created_by_name"] for fila in filas} == {"Funcionario Uno"}
+    assert {fila["action"] for fila in filas} == {"documento"}
+
+    # La fecha corregida sin persistir solo sobrevive en el histórico: si se pierde ahí,
+    # ya no hay forma de saber qué se imprimió.
+    contexto["session"].refresh(contexto["obligacion"])
+    assert contexto["obligacion"].paid_date is None
+
+    filtrado = contexto["client"].get("/documents/generated", params={"obligation_id": constancia.id})
+    assert filtrado.status_code == 200
+    assert [fila["obligation_id"] for fila in filtrado.json()] == [constancia.id]
+
+
 def test_generate_pdf_sin_libreoffice_falla_claro(contexto, monkeypatch):
     """Se fuerza el error de conversión para validar el mensaje, sin LibreOffice."""
     def _explode(docx_path, pdf_path, perfil_dir):
@@ -561,6 +607,320 @@ def test_generate_sin_plantilla_registrada_devuelve_404(contexto):
 
     assert response.status_code == 404
     assert "AUTO_ARCHIVO" in response.json()["detail"]
+
+
+# ─────────────────────────────────────────────────────────────
+# Histórico de las gestiones masivas
+# ─────────────────────────────────────────────────────────────
+
+def _plantilla_del_tenant(contexto, code: str = "AUTO_ARCHIVO") -> DocumentTemplate:
+    return contexto["session"].exec(
+        select(DocumentTemplate).where(DocumentTemplate.code == code)
+    ).first()
+
+
+def _filas_historial(contexto, **params) -> List[dict]:
+    response = contexto["client"].get("/documents/generated", params=params)
+    assert response.status_code == 200
+    return response.json()
+
+
+def _referencias_excel(archivo) -> List[str]:
+    """Números de resolución que quedaron escritos en las filas del Excel."""
+    from openpyxl import load_workbook
+
+    hoja = load_workbook(archivo).active
+    return [fila[6] for fila in hoja.iter_rows(min_row=5, values_only=True) if fila[6]]
+
+
+def test_impresion_por_rango_deja_su_lote_en_el_historial(contexto, tmp_path, monkeypatch):
+    """El DOCX combinado no pertenece a una obligación: el rango es la única pista."""
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+
+    response = contexto["client"].post(
+        "/documents/correspondence/print-range",
+        json={
+            "resolution_from": 1886,
+            "resolution_to": 3849,
+            "template_id": _plantilla_del_tenant(contexto).id,
+            "output_format": "docx",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Document-Count"] == "2"
+
+    filas = _filas_historial(contexto)
+    assert [fila["action"] for fila in filas] == ["impresion_rango"]
+    assert filas[0]["resolution_number"] == "1886-3849"
+    assert filas[0]["document_type"] == "DOCX"
+    assert filas[0]["variables_used"]["total_obligaciones"] == 2
+    assert filas[0]["created_by_name"] == "Funcionario Uno"
+    assert filas[0]["delivery_method"] == "impresion"
+    assert filas[0]["file_size"] > 0
+    assert os.path.exists(filas[0]["file_path"])
+
+
+def test_impresion_por_rango_en_pdf_tambien_registra_el_entregable(contexto, tmp_path, monkeypatch):
+    """Se simula LibreOffice y la unión de PDF para no depender del binario en la prueba."""
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+
+    class ConversionFalsa:
+        returncode = 0
+        stderr = ""
+
+    def _falsa_conversion(comando, **kwargs):
+        with open(os.path.splitext(comando[-1])[0] + ".pdf", "wb") as archivo:
+            archivo.write(b"%PDF-1.4 simulado")
+        return ConversionFalsa()
+
+    class EscritorFalso:
+        def __init__(self):
+            self.paginas = []
+
+        def append(self, ruta):
+            self.paginas.append(ruta)
+
+        def write(self, archivo):
+            archivo.write(b"%PDF-1.4 unificado")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(documents.subprocess, "run", _falsa_conversion)
+    monkeypatch.setattr(documents, "PdfWriter", EscritorFalso)
+
+    response = contexto["client"].post(
+        "/documents/correspondence/print-range",
+        json={
+            "resolution_from": 1886,
+            "resolution_to": 3849,
+            "template_id": _plantilla_del_tenant(contexto).id,
+            "output_format": "pdf",
+        },
+    )
+
+    assert response.status_code == 200
+
+    filas = _filas_historial(contexto, accion="impresion_rango")
+    assert len(filas) == 1
+    assert filas[0]["document_type"] == "PDF"
+    assert filas[0]["variables_used"]["formato"] == "pdf"
+    assert filas[0]["delivery_method"] == "impresion"
+    assert os.path.exists(filas[0]["file_path"])
+
+
+def test_lote_de_correspondencia_registra_una_fila_por_resolucion(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+
+    response = contexto["client"].post(
+        "/documents/correspondence/batch",
+        json={
+            "obligation_ids": [
+                contexto["obligacion"].id,
+                contexto["obligacion_constancia"].id,
+            ],
+            "template_id": _plantilla_del_tenant(contexto).id,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Document-Count"] == "2"
+
+    filas = _filas_historial(contexto, accion="lote_correspondencia")
+    assert len(filas) == 2
+    assert sorted(fila["resolution_number"] for fila in filas) == ["1886", "3849"]
+    assert {fila["obligation_id"] for fila in filas} == {
+        contexto["obligacion"].id,
+        contexto["obligacion_constancia"].id,
+    }
+    # Cada fila conserva el contexto que se imprimió, no solo el identificador.
+    for fila in filas:
+        assert fila["variables_used"]["numero_resolucion"] == fila["resolution_number"]
+        assert fila["variables_used"]["nombre_usuario"]
+        assert fila["delivery_method"] == "zip"
+        assert os.path.exists(fila["file_path"])
+
+
+def test_exportacion_excel_deja_el_archivo_y_su_recuento(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+
+    response = contexto["client"].get(
+        "/documents/export/excel",
+        params={"resolution_from": 1, "resolution_to": 9999},
+    )
+
+    assert response.status_code == 200
+
+    filas = _filas_historial(contexto, accion="exportacion_excel")
+    assert len(filas) == 1
+    assert filas[0]["document_type"] == "XLSX"
+    assert filas[0]["resolution_number"] == "1-9999"
+    assert filas[0]["delivery_method"] == "descarga"
+    # El 9999 es de otro tenant, así que no cuenta en el recuento exportado.
+    assert filas[0]["variables_used"]["total_obligaciones"] == 2
+    assert filas[0]["file_size"] == os.path.getsize(filas[0]["file_path"])
+
+
+def test_exportador_excel_excluye_los_datos_de_otros_tenants(contexto):
+    """Sin el filtro, el Excel entregaba identificaciones y correos de toda la plataforma."""
+    from app.services.excel_export_service import ExcelExportService
+
+    propio = ExcelExportService.export_obligations_by_resolution_range(
+        db=contexto["session"],
+        resolution_from=1,
+        resolution_to=9999,
+        tenant_id=contexto["tenant"].id,
+    )
+    ajeno = ExcelExportService.export_obligations_by_resolution_range(
+        db=contexto["session"],
+        resolution_from=1,
+        resolution_to=9999,
+        tenant_id=contexto["otro_tenant"].id,
+    )
+
+    assert sorted(_referencias_excel(propio)) == ["1886", "3849"]
+    assert _referencias_excel(ajeno) == ["9999"]
+
+
+def test_historial_no_mezcla_tenants(contexto, tmp_path, monkeypatch):
+    """El histórico se filtra por tenant aunque todos los clientes compartan base de datos."""
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+
+    generado = contexto["client"].post(
+        "/documents/constancia/generate",
+        json={
+            "obligation_ids": [contexto["obligacion_constancia"].id],
+            "formato": "docx",
+        },
+    )
+    assert generado.status_code == 200
+    assert len(_filas_historial(contexto)) == 1
+
+    ajeno = User(
+        email="otro@example.com",
+        username="otro",
+        full_name="Otro Funcionario",
+        hashed_password="$5$sin_uso",
+        role=UserRole.TENANT_ADMIN,
+        tenant_id=contexto["otro_tenant"].id,
+        is_active=True,
+    )
+    contexto["session"].add(ajeno)
+    contexto["session"].commit()
+    contexto["app"].dependency_overrides[get_current_active_user] = lambda: ajeno
+
+    assert _filas_historial(contexto) == []
+
+
+# ─────────────────────────────────────────────────────────────
+# Destinatario y medio de entrega
+# ─────────────────────────────────────────────────────────────
+
+def test_historial_guarda_el_destinatario_digitado_y_su_envio(contexto, tmp_path, monkeypatch):
+    """El correo escrito a mano debe quedar en el histórico, no solo el del cliente."""
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        documents, "_config_smtp", lambda: {"smtp_host": "smtp", "smtp_port": 587}
+    )
+    monkeypatch.setattr(
+        EmailService, "send_document_email", staticmethod(lambda **kwargs: True)
+    )
+
+    response = contexto["client"].post(
+        "/documents/auto-archivo/generate",
+        json={
+            "obligation_ids": [contexto["obligacion"].id],
+            "formato": "docx",
+            "enviar_correo": True,
+            "destinatarios": {str(contexto["obligacion"].id): "prensa@example.com"},
+        },
+    )
+
+    assert response.status_code == 200
+    filas = _filas_historial(contexto)
+    assert filas[0]["recipient_email"] == "prensa@example.com"
+    assert filas[0]["delivery_method"] == "correo"
+    assert filas[0]["is_sent"] is True
+
+
+def test_historial_distingue_correo_rechazado_de_cliente_sin_correo(contexto, tmp_path, monkeypatch):
+    """Un is_sent en falso no dice por qué no llegó: el medio de entrega sí lo hace."""
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        documents, "_config_smtp", lambda: {"smtp_host": "smtp", "smtp_port": 587}
+    )
+    monkeypatch.setattr(
+        EmailService, "send_document_email", staticmethod(lambda **kwargs: False)
+    )
+
+    response = contexto["client"].post(
+        "/documents/auto-archivo/generate",
+        json={
+            "obligation_ids": [
+                contexto["obligacion"].id,
+                contexto["obligacion_constancia"].id,
+            ],
+            "formato": "docx",
+            "enviar_correo": True,
+        },
+    )
+
+    assert response.status_code == 200
+    por_resolucion = {fila["resolution_number"]: fila for fila in _filas_historial(contexto)}
+    # El cliente con correo registrado: se intentó y el servidor lo rechazó.
+    assert por_resolucion["3849"]["recipient_email"] == "deudor@example.com"
+    assert por_resolucion["3849"]["delivery_method"] == "correo_fallido"
+    assert por_resolucion["3849"]["is_sent"] is False
+    # La ficha sin correo no tiene a quién escribirle: queda vacío y con su motivo.
+    assert por_resolucion["1886"]["recipient_email"] is None
+    assert por_resolucion["1886"]["delivery_method"] == "correo_sin_destinatario"
+
+
+def test_historial_anota_el_correo_omitido_por_smtp_sin_configurar(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(documents, "_config_smtp", lambda: None)
+
+    response = contexto["client"].post(
+        "/documents/auto-archivo/generate",
+        json={
+            "obligation_ids": [contexto["obligacion"].id],
+            "formato": "docx",
+            "enviar_correo": True,
+        },
+    )
+
+    assert response.status_code == 200
+    filas = _filas_historial(contexto)
+    assert [fila["delivery_method"] for fila in filas] == ["correo_omitido"]
+    assert filas[0]["recipient_email"] == "deudor@example.com"
+    assert filas[0]["is_sent"] is False
+
+
+def test_historial_deja_el_zip_cuando_no_se_pide_correo(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "OUTPUT_DIR", str(tmp_path))
+
+    response = contexto["client"].post(
+        "/documents/constancia/generate",
+        json={
+            "obligation_ids": [
+                contexto["obligacion"].id,
+                contexto["obligacion_constancia"].id,
+            ],
+            "formato": "docx",
+        },
+    )
+
+    assert response.status_code == 200
+    filas = _filas_historial(contexto)
+    assert len(filas) == 2
+    assert {fila["delivery_method"] for fila in filas} == {"zip"}
+    # El destinatario es el de la ficha del cliente, se haya pedido correo o no: sirve para
+    # saber a quién iba dirigido el sobre que salió en el ZIP.
+    por_resolucion = {fila["resolution_number"]: fila for fila in filas}
+    assert por_resolucion["3849"]["recipient_email"] == "deudor@example.com"
+    assert por_resolucion["1886"]["recipient_email"] is None
+    assert {fila["is_sent"] for fila in filas} == {False}
 
 
 # ─────────────────────────────────────────────────────────────

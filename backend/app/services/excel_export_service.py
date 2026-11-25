@@ -2,7 +2,7 @@
 Servicio para exportación de obligaciones a Excel basado en rangos de resoluciones.
 Formato inspirado en el archivo de LOTE 15-3 de Alcaldía de Girón.
 """
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from datetime import datetime
 from io import BytesIO
 import pandas as pd
@@ -24,7 +24,8 @@ class ExcelExportService:
     def export_obligations_by_resolution_range(
         db: Session,
         resolution_from: int,
-        resolution_to: int
+        resolution_to: int,
+        tenant_id: Optional[int] = None
     ) -> BytesIO:
         """
         Exporta obligaciones en un rango de números de resolución a un archivo Excel con formato.
@@ -34,6 +35,9 @@ class ExcelExportService:
             db: Sesión de base de datos
             resolution_from: Número de resolución inicial
             resolution_to: Número de resolución final
+            tenant_id: Si se informa, limita el archivo a las obligaciones de ese tenant.
+                Sin filtro se exportaban los datos de todos los clientes de la plataforma,
+                incluidas identificaciones, nombres y correos.
             
         Returns:
             BytesIO: Archivo Excel en memoria
@@ -56,6 +60,9 @@ class ExcelExportService:
                 Obligation.resolution_number.isnot(None)
             )
         )
+
+        if tenant_id is not None:
+            statement = statement.where(Client.tenant_id == tenant_id)
         
         # Obtener resultados
         results = db.exec(statement).all()

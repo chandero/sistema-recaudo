@@ -137,6 +137,24 @@ CODIGOS_CON_OBLIGACION = {
     detalle["code"]: tipo for tipo, detalle in REGISTRO_CORRESPONDENCIA.items()
 }
 
+# Trazas del histórico: indican qué acción de la pantalla produjo cada archivo. Se
+# guardan codificadas para poder filtrarlas sin depender de textos visibles.
+ACCION_DOCUMENTO = "documento"
+ACCION_IMPRESION_RANGO = "impresion_rango"
+ACCION_LOTE_CORRESPONDENCIA = "lote_correspondencia"
+ACCION_EXPORTACION_EXCEL = "exportacion_excel"
+
+# Medios de entrega del histórico. Los tres que siguen a ENTREGA_CORREO conservan el motivo
+# por el cual el mensaje no salió: sin esa distinción, un is_sent en falso no dice si fue un
+# rechazo del servidor, un cliente sin correo o una configuración pendiente de SMTP.
+ENTREGA_CORREO = "correo"
+ENTREGA_CORREO_FALLIDO = "correo_fallido"
+ENTREGA_SIN_DESTINATARIO = "correo_sin_destinatario"
+ENTREGA_SMTP_OMITIDO = "correo_omitido"
+ENTREGA_ZIP = "zip"
+ENTREGA_IMPRESION = "impresion"
+ENTREGA_DESCARGA = "descarga"
+
 
 class FechasPorObligacion(BaseModel):
     """Fechas que el funcionario puede corregir antes de generar."""
@@ -409,6 +427,87 @@ def _persistir_fechas(
         obligation.executory_date = fechas["fecha_ejecutoria"]
 
 
+def _registrar_generacion(
+    session: Session,
+    current_user: User,
+    *,
+    accion: str,
+    ruta: str,
+    document_type: str,
+    variables: Dict[str, Any],
+    resolution_number: Optional[str] = None,
+    template_id: Optional[int] = None,
+    obligation: Optional[Obligation] = None,
+    entrega: str = ENTREGA_DESCARGA,
+    destinatario: Optional[str] = None,
+) -> Optional[GeneratedDocument]:
+    """Registra en el histórico un archivo que no salió del flujo oficial por obligación.
+
+    La impresión por rango y el Excel cubren decenas de resoluciones de una sola vez, así
+    que no hay una obligación que anotar: se guarda el rango, el recuento y la ruta del
+    archivo entregado, que es lo que hace falta para reconstruir el entregable.
+
+    El registro es accesorio a la entrega. Si falla, se consigna en el log y la descarga
+    sigue en pie, con el mismo criterio que se aplicó al envío por correo.
+    """
+    try:
+        registro = GeneratedDocument(
+            tenant_id=current_user.tenant_id,
+            process_id=obligation.process_id if obligation else None,
+            template_id=template_id,
+            client_id=obligation.client_id if obligation else None,
+            obligation_id=obligation.id if obligation else None,
+            file_path=ruta,
+            filename=os.path.basename(ruta),
+            document_type=document_type,
+            file_size=os.path.getsize(ruta) if os.path.exists(ruta) else 0,
+            variables_used=variables,
+            created_by=current_user.id,
+            resolution_number=resolution_number,
+            action=accion,
+            delivery_method=entrega,
+            recipient_email=destinatario,
+        )
+        session.add(registro)
+        session.commit()
+        return registro
+    except Exception as error:
+        session.rollback()
+        logger.warning(
+            module="document_generation",
+            action="history_registration_failed",
+            message=f"No se pudo registrar el archivo {accion} en el histórico: {str(error)}",
+            data={"accion": accion, "ruta": ruta, "tenant_id": current_user.tenant_id},
+        )
+        return None
+
+
+def _obligaciones_en_rango(
+    session: Session,
+    tenant_id: int,
+    resolution_from: int,
+    resolution_to: int,
+) -> int:
+    """Cuántas obligaciones del tenant caen dentro de un rango de resoluciones.
+
+    Se repite el criterio de extracción numérica del exportador para que el recuento
+    anotado en el histórico coincida con las filas del archivo que se entregó.
+    """
+    from app.services.excel_export_service import ExcelExportService
+
+    numeros = session.exec(
+        select(Obligation.resolution_number)
+        .join(Client, Obligation.client_id == Client.id)
+        .where(Client.tenant_id == tenant_id, Obligation.resolution_number.isnot(None))
+    ).all()
+    return sum(
+        1
+        for numero in numeros
+        if numero
+        and resolution_from <= ExcelExportService._extract_numeric_part(numero) <= resolution_to
+    )
+
+
 def _preview_correspondencia(
     tipo: str,
     session: Session,
@@ -443,6 +542,15 @@ def _preview_correspondencia(
             "advertencias": advertencias,
         })
     return vista
+
+
+def _destinatario_de(
+    request: CorrespondenciaSolicitada,
+    obligation: Obligation,
+    client: Client,
+) -> str:
+    """Correo efectivo de la fila: lo digitado a mano manda sobre lo cargado en el cliente."""
+    return (request.destinatarios.get(obligation.id) or client.email or "").strip()
 
 
 def _generar_correspondencia(
@@ -494,8 +602,10 @@ def _generar_correspondencia(
 
     adjuntos: Dict[int, List[Dict[str, Any]]] = {}
     documentos: Dict[int, List[GeneratedDocument]] = {}
+    destinatarios: Dict[int, str] = {}
     for indice, (obligation, client, fechas) in enumerate(resueltos):
         contexto = _contexto_documento(tipo, obligation, client, fechas)
+        destinatarios[obligation.id] = _destinatario_de(request, obligation, client)
         base = (
             f"{registro['prefijo']}_"
             f"{_safe_filename(obligation.resolution_number)}_"
@@ -534,6 +644,10 @@ def _generar_correspondencia(
                 variables_used=contexto,
                 created_by=current_user.id,
                 resolution_number=obligation.resolution_number,
+                action=ACCION_DOCUMENTO,
+                recipient_email=destinatarios[obligation.id] or None,
+                # El ZIP se entrega siempre; el correo es un extra que se resuelve abajo.
+                delivery_method=ENTREGA_ZIP,
             ))
         adjuntos[obligation.id] = fila_adjuntos
         documentos[obligation.id] = fila_documentos
@@ -561,6 +675,9 @@ def _generar_correspondencia(
             # omite el envío y se avisa por cabecera en lugar de descartar lo generado.
             fallidos = len(resueltos)
             nota_correo = "smtp_no_configurado"
+            for fila_documentos in documentos.values():
+                for documento in fila_documentos:
+                    documento.delivery_method = ENTREGA_SMTP_OMITIDO
             logger.warning(
                 module="document_generation",
                 action="email_skipped",
@@ -576,12 +693,12 @@ def _generar_correspondencia(
             )
         else:
             for obligation, client, _ in resueltos:
-                destinatario = (
-                    request.destinatarios.get(obligation.id) or client.email or ""
-                ).strip()
+                destinatario = destinatarios[obligation.id]
                 fila_adjuntos = adjuntos[obligation.id]
                 if not destinatario:
                     fallidos += 1
+                    for documento in documentos[obligation.id]:
+                        documento.delivery_method = ENTREGA_SIN_DESTINATARIO
                     logger.warning(
                         module="document_generation",
                         action="email_skipped",
@@ -601,8 +718,13 @@ def _generar_correspondencia(
                     for documento in documentos[obligation.id]:
                         documento.is_sent = True
                         documento.sent_at = datetime.utcnow()
+                        documento.delivery_method = ENTREGA_CORREO
                 else:
                     fallidos += 1
+                    # El destinatario queda anotado igual: es la prueba de a quién se le
+                    # quiso entregar el documento aunque el servidor lo haya rechazado.
+                    for documento in documentos[obligation.id]:
+                        documento.delivery_method = ENTREGA_CORREO_FALLIDO
 
     session.commit()
 
@@ -738,6 +860,21 @@ def generate_correspondence_print_range(
         with open(pdf_path, "wb") as pdf_file:
             writer.write(pdf_file)
         writer.close()
+        _registrar_generacion(
+            session, current_user,
+            accion=ACCION_IMPRESION_RANGO,
+            ruta=pdf_path,
+            document_type="PDF",
+            entrega=ENTREGA_IMPRESION,
+            resolution_number=f"{request.resolution_from}-{request.resolution_to}",
+            template_id=template.id,
+            variables={
+                "resolution_from": request.resolution_from,
+                "resolution_to": request.resolution_to,
+                "total_obligaciones": len(rows),
+                "formato": "pdf",
+            },
+        )
         return FileResponse(
             pdf_path,
             media_type="application/pdf",
@@ -749,6 +886,21 @@ def generate_correspondence_print_range(
         f"impresion_correspondencia_{request.resolution_from}_{request.resolution_to}_{stamp}.docx",
     )
     DocumentGenerationService.combine_documents_per_resolution(rendered_paths, output_path)
+    _registrar_generacion(
+        session, current_user,
+        accion=ACCION_IMPRESION_RANGO,
+        ruta=output_path,
+        document_type="DOCX",
+        entrega=ENTREGA_IMPRESION,
+        resolution_number=f"{request.resolution_from}-{request.resolution_to}",
+        template_id=template.id,
+        variables={
+            "resolution_from": request.resolution_from,
+            "resolution_to": request.resolution_to,
+            "total_obligaciones": len(rows),
+            "formato": "docx",
+        },
+    )
     return FileResponse(
         output_path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -803,6 +955,7 @@ def generate_certified_correspondence_batch(
         template_file.write(template.content)
 
     zip_path = os.path.join(OUTPUT_DIR, f"correspondencia_certificada_{stamp}.zip")
+    entregados = []
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for obligation, client in rows:
             context = _correspondence_context(obligation, client)
@@ -813,6 +966,24 @@ def generate_certified_correspondence_batch(
             output_path = os.path.join(batch_dir, filename)
             DocumentGenerationService.render_template(template_path, context, output_path)
             zip_file.write(output_path, filename)
+            entregados.append((obligation, client, output_path, context))
+
+    # Un registro por resolución del ZIP: es lo que permite sostener después que esta
+    # obligación hizo parte del lote entregado ese día.
+    for obligation, client, output_path, context in entregados:
+        _registrar_generacion(
+            session, current_user,
+            accion=ACCION_LOTE_CORRESPONDENCIA,
+            ruta=output_path,
+            document_type="DOCX",
+            entrega=ENTREGA_ZIP,
+            # Aquí no se digita el correo: el destinatario es el que trae la ficha del cliente.
+            destinatario=(client.email or "").strip() or None,
+            resolution_number=obligation.resolution_number,
+            template_id=template.id,
+            obligation=obligation,
+            variables=context,
+        )
 
     return FileResponse(
         zip_path,
@@ -917,11 +1088,12 @@ def export_obligations_by_resolution_range(
         # Importar el servicio acá para evitar problemas de importación circular
         from app.services.excel_export_service import ExcelExportService
         
-        # Generar archivo Excel
+        # Generar archivo Excel, acotado al tenant del usuario que exporta
         excel_file = ExcelExportService.export_obligations_by_resolution_range(
             db=session,
             resolution_from=resolution_from,
-            resolution_to=resolution_to
+            resolution_to=resolution_to,
+            tenant_id=current_user.tenant_id
         )
         
         # Crear nombre de archivo
@@ -929,6 +1101,30 @@ def export_obligations_by_resolution_range(
         
         # Devolver archivo como respuesta
         excel_content = excel_file.getvalue()
+
+        # Se conserva en disco el mismo archivo que se entrega: sin la ruta, la fila del
+        # histórico no se podría contrastar ni volver a remitir.
+        ruta = os.path.join(OUTPUT_DIR, filename)
+        with open(ruta, "wb") as archivo_excel:
+            archivo_excel.write(excel_content)
+
+        _registrar_generacion(
+            session, current_user,
+            accion=ACCION_EXPORTACION_EXCEL,
+            ruta=ruta,
+            document_type="XLSX",
+            entrega=ENTREGA_DESCARGA,
+            resolution_number=f"{resolution_from}-{resolution_to}",
+            variables={
+                "resolution_from": resolution_from,
+                "resolution_to": resolution_to,
+                "total_obligaciones": _obligaciones_en_rango(
+                    session, current_user.tenant_id, resolution_from, resolution_to
+                ),
+                "formato": "xlsx",
+            },
+        )
+
         headers = {
             "Content-Disposition": f"attachment; filename={filename}",
             "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1149,17 +1345,43 @@ def reemplazar_contenido_plantilla(
 @router.get("/generated", response_model=List[GeneratedDocumentResponse])
 def get_generated_documents(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = Query(default=100, le=500),
+    obligation_id: Optional[int] = None,
+    accion: Optional[str] = None,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Obtener documentos generados del tenant"""
+    """Histórico de documentos generados del tenant, del más reciente al más viejo."""
     try:
         statement = select(GeneratedDocument).where(
             GeneratedDocument.tenant_id == current_user.tenant_id
-        ).offset(skip).limit(limit)
-        documents = session.exec(statement).all()
-        return documents
+        )
+        if obligation_id:
+            statement = statement.where(GeneratedDocument.obligation_id == obligation_id)
+        if accion:
+            statement = statement.where(GeneratedDocument.action == accion)
+        documents = session.exec(
+            statement.order_by(
+                desc(GeneratedDocument.created_at),
+                desc(GeneratedDocument.id),
+            ).offset(skip).limit(limit)
+        ).all()
+
+        # Las fechas usadas ya viajan en variables_used; falta el nombre del autor,
+        # que se resuelve en una sola consulta en lugar de cargar la relación
+        # perezosa fila por fila.
+        autores = {documento.created_by for documento in documents if documento.created_by}
+        nombres = {}
+        if autores:
+            for usuario in session.exec(select(User).where(User.id.in_(autores))).all():
+                nombres[usuario.id] = usuario.full_name or usuario.username
+
+        filas = []
+        for documento in documents:
+            fila = GeneratedDocumentResponse.model_validate(documento)
+            fila.created_by_name = nombres.get(documento.created_by)
+            filas.append(fila)
+        return filas
     except HTTPException:
         raise
     except Exception as e:
@@ -1209,7 +1431,9 @@ def generate_document(
             filename=output_filename,
             document_type="PDF",
             tenant_id=current_user.tenant_id,
-            created_by=current_user.id
+            created_by=current_user.id,
+            action=ACCION_DOCUMENTO,
+            delivery_method=ENTREGA_DESCARGA,
         )
         session.add(doc_record)
         session.commit()

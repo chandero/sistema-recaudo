@@ -102,6 +102,15 @@ EXPECTED_COLUMNS = {
         ("notification_date", "DATE"),
         ("executory_date", "DATE"),
     ],
+    # Traza de qué generó cada archivo del histórico.
+    # Equivale a la migración Alembic 010_historial_generacion.
+    "generated_documents": [
+        ("action", "VARCHAR(40) DEFAULT 'documento'"),
+        # Destinatario y medio de entrega de cada archivo.
+        # Equivale a la migración Alembic 011_entrega_documentos.
+        ("recipient_email", "VARCHAR(255)"),
+        ("delivery_method", "VARCHAR(40)"),
+    ],
     # Las demás tablas existentes ya tienen todas sus columnas correctas.
     # Si en el futuro se agregan columnas a modelos existentes, añadir aquí.
 }

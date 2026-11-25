@@ -561,6 +561,120 @@
               </template>
             </Card>
           </div>
+
+          <!-- Histórico de generación -->
+          <h4 class="seccion-titulo m-0">
+            <button
+              type="button"
+              class="seccion-cabecera"
+              :aria-expanded="String(estaAbierta('historial'))"
+              @click="alternar('historial')"
+            >
+              <i class="pi pi-history text-gray-600"></i>
+              <span>Historial de generación</span>
+              <span class="seccion-dato">{{ historial.length }} registro(s)</span>
+              <i
+                class="pi seccion-flecha"
+                :class="estaAbierta('historial') ? 'pi-chevron-up' : 'pi-chevron-down'"
+              ></i>
+            </button>
+          </h4>
+          <div v-show="estaAbierta('historial')" class="resolution-data mb-0">
+            <div class="flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
+              <small class="text-gray-500">
+                Qué se generó, con qué fechas, a quién se dirigió y quién lo hizo. Las fechas
+                mostradas son las que salieron impresas, aunque no se guardaran como definitivas
+                en la obligación.
+              </small>
+              <Button
+                label="Actualizar"
+                icon="pi pi-refresh"
+                size="small"
+                outlined
+                severity="secondary"
+                :loading="cargandoHistorial"
+                @click="cargarHistorial"
+              />
+            </div>
+            <DataTable
+              :value="historial"
+              :loading="cargandoHistorial"
+              dataKey="id"
+              :paginator="historial.length > 10"
+              :rows="10"
+              size="small"
+              stripedRows
+              responsiveLayout="scroll"
+              class="p-datatable-gridlines"
+            >
+              <template #empty>No hay documentos generados todavía.</template>
+              <Column header="Cuándo" style="width: 165px">
+                <template #body="slotProps">{{ formatFechaHora(slotProps.data.created_at) }}</template>
+              </Column>
+              <Column header="Gestión" style="width: 175px">
+                <template #body="slotProps">
+                  <Tag :value="etiquetaAccion(slotProps.data)" :severity="severidadAccion(slotProps.data)" />
+                </template>
+              </Column>
+              <Column header="Documento" style="width: 280px">
+                <template #body="slotProps">
+                  <div class="flex align-items-center gap-2">
+                    <Tag :value="slotProps.data.document_type" severity="secondary" />
+                    <span class="text-sm" :title="slotProps.data.filename">
+                      {{ slotProps.data.filename }}
+                    </span>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Resolución" style="width: 130px">
+                <template #body="slotProps">
+                  <div>{{ slotProps.data.resolution_number || '-' }}</div>
+                  <small
+                    v-if="slotProps.data.variables_used?.total_obligaciones"
+                    class="text-gray-500"
+                  >
+                    {{ slotProps.data.variables_used.total_obligaciones }} obligación(es)
+                  </small>
+                </template>
+              </Column>
+              <Column header="Cliente">
+                <template #body="slotProps">
+                  {{ slotProps.data.variables_used?.nombre_usuario || '-' }}
+                </template>
+              </Column>
+              <Column header="Entrega" style="width: 215px">
+                <template #body="slotProps">
+                  <div class="flex flex-column gap-1">
+                    <Tag
+                      v-if="slotProps.data.delivery_method"
+                      :value="etiquetaEntrega(slotProps.data)"
+                      :severity="severidadEntrega(slotProps.data)"
+                    />
+                    <span v-else class="text-gray-400">-</span>
+                    <small class="text-gray-500">{{ slotProps.data.recipient_email || '' }}</small>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Fechas usadas">
+                <template #body="slotProps">
+                  <div class="flex flex-wrap gap-2">
+                    <Tag
+                      v-for="fecha in fechasUsadas(slotProps.data)"
+                      :key="fecha.clave"
+                      :value="`${fecha.etiqueta}: ${fecha.valor}`"
+                      severity="info"
+                    />
+                    <span v-if="fechasUsadas(slotProps.data).length === 0" class="text-gray-400">
+                      -
+                    </span>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Quién" style="width: 160px">
+                <template #body="slotProps">{{ slotProps.data.created_by_name || '-' }}</template>
+              </Column>
+            </DataTable>
+          </div>
         </template>
       </Card>
 
@@ -830,6 +944,14 @@ import Checkbox from 'primevue/checkbox';
 import RadioButton from 'primevue/radiobutton';
 import api, { documentService } from '../services/api';
 import { useSeccionesColapsables } from '../composables/useSeccionesColapsables';
+import {
+  etiquetaAccion,
+  etiquetaEntrega,
+  fechasUsadas,
+  formatFechaHora,
+  severidadAccion,
+  severidadEntrega
+} from '../composables/historialGeneracion';
 
 const toast = useToast();
 
@@ -855,12 +977,37 @@ const SECCIONES_RESOLUCIONES = {
   impresion: false,
   excel: false,
   filtros: true,
-  tabla: true
+  tabla: true,
+  historial: false
 };
 const { estaAbierta, alternar, alternarTodas, todasAbiertas } = useSeccionesColapsables(
   'resoluciones',
   SECCIONES_RESOLUCIONES
 );
+
+// Histórico de generación: consultas de auditoría, no el flujo principal, por eso el
+// panel arranca cerrado y se recarga tras cada generación.
+const historial = ref([]);
+const cargandoHistorial = ref(false);
+
+const cargarHistorial = async () => {
+  cargandoHistorial.value = true;
+  try {
+    const response = await documentService.getGeneratedDocuments({ limit: 50 });
+    historial.value = Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    // Si el histórico no carga, la asignación sigue funcionando igual.
+    historial.value = [];
+    toast.add({
+      severity: 'warn',
+      summary: 'Histórico no disponible',
+      detail: 'No se pudo consultar el histórico de generación',
+      life: 4000
+    });
+  } finally {
+    cargandoHistorial.value = false;
+  }
+};
 
 // Configuración
 const config = ref({
@@ -1064,6 +1211,7 @@ const generarCorrespondencia = async () => {
       detail: `ZIP generado con ${seleccion.length} documentos individuales`,
       life: 5000
     });
+    cargarHistorial();
   } catch (error) {
     let detail = 'No se pudo generar la correspondencia';
     if (error.response?.data instanceof Blob) {
@@ -1242,6 +1390,7 @@ const generarDocumentos = async () => {
     if (documentosPersistirFechas.value) {
       loadProcesos();
     }
+    cargarHistorial();
   } catch (error) {
     toast.add({
       severity: 'error',
@@ -1309,6 +1458,7 @@ const generarImpresionPorRango = async (format = 'docx') => {
       detail: format === 'pdf' ? 'El PDF se abrió en una pestaña nueva' : 'Abra el DOCX descargado y envíelo a la impresora',
       life: 6000
     });
+    cargarHistorial();
   } catch (error) {
     if (printWindow) printWindow.close();
     let detail = 'No se pudo generar el archivo de impresión';
@@ -1362,6 +1512,7 @@ const exportarExcelPorRango = async () => {
       detail: 'Archivo Excel descargado correctamente',
       life: 5000
     });
+    cargarHistorial();
   } catch (error) {
     let detail = 'No se pudo generar el archivo Excel';
     if (error.response?.data instanceof Blob) {
@@ -1511,6 +1662,7 @@ onMounted(() => {
   loadProcesos();
   loadEstados();
   loadConfig();
+  cargarHistorial();
 });
 </script>
 

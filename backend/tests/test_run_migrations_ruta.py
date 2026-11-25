@@ -93,3 +93,31 @@ def test_migra_la_base_de_la_aplicacion_y_agrega_las_fechas(monkeypatch, tmp_pat
 
     nuevas = _columnas(str(base), "obligations")
     assert {"paid_date", "notification_date", "executory_date"} <= nuevas
+
+
+def test_migra_el_historial_sin_perder_los_documentos_ya_entregados(monkeypatch, tmp_path):
+    """El histórico ya tiene filas en producción: la migración debe sumar columnas sin borrarlas."""
+    _sin_variables_de_entorno(monkeypatch)
+    _fijar_configuracion_de_la_aplicacion(monkeypatch, "sqlite:///./test.db")
+    base = tmp_path / "test.db"
+    _crear_base(
+        str(base),
+        {"generated_documents": ["filename", "file_path", "is_sent"]},
+    )
+    with sqlite3.connect(base) as conexion:
+        conexion.execute(
+            "INSERT INTO generated_documents (filename, file_path, is_sent) "
+            "VALUES ('auto_3849.docx', 'app/uploads/generated/auto_3849.docx', 0)"
+        )
+    monkeypatch.chdir(tmp_path)
+
+    assert run_migrations.main() is True
+
+    columnas = _columnas(str(base), "generated_documents")
+    assert {"action", "recipient_email", "delivery_method"} <= columnas
+    with sqlite3.connect(base) as conexion:
+        fila = conexion.execute(
+            "SELECT action, recipient_email, delivery_method FROM generated_documents"
+        ).fetchone()
+    # Las filas previas eran documentos oficiales: ese es el valor con el que se anotan.
+    assert fila == ("documento", None, None)
