@@ -986,16 +986,17 @@ def test_vista_previa_usa_el_binario_poniendo_el_espejo_con_otro_nombre(contexto
         _crear_plantilla_docx(marca="ESPEJO-ANTIGUO")
     )
     plantilla = _plantilla(contexto, "CONSTANCIA_SECRETARIAL")
+    obligacion = contexto["obligacion_constancia"]
 
     respuesta = contexto["client"].post(
         f"/documents/templates/{plantilla.id}/generate",
-        json={"numero_resolucion": "5150"},
+        json={"obligation_id": obligacion.id},
     )
 
     assert respuesta.status_code == 200, respuesta.text
     texto = _texto_docx(respuesta.content)
     assert "ESPEJO-ANTIGUO" not in texto
-    assert "5150" in texto
+    assert obligacion.resolution_number in texto
 
 
 def test_vista_previa_sin_binario_sigue_resolviendo_el_disco(contexto, tmp_path, monkeypatch):
@@ -1063,9 +1064,77 @@ def test_vista_previa_no_deja_copias_temporales_de_la_plantilla(contexto, tmp_pa
 
     respuesta = contexto["client"].post(
         f"/documents/templates/{plantilla.id}/generate",
-        json={"numero_resolucion": "5152"},
+        json={"obligation_id": contexto["obligacion"].id},
     )
 
     assert respuesta.status_code == 200, respuesta.text
     assert creados
     assert [nombre for nombre in creados if os.path.exists(nombre)] == []
+
+
+def test_vista_previa_de_formato_oficial_sin_obligacion_se_rechaza(contexto, tmp_path, monkeypatch):
+    """No se emite un documento oficial con datos de ejemplo."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    plantilla = _plantilla(contexto, "AUTO_ARCHIVO")
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{plantilla.id}/generate",
+        json={"nombre_usuario": "Cliente Prueba"},
+    )
+
+    assert respuesta.status_code == 400
+    assert "obligación real" in respuesta.json()["detail"]
+
+
+def test_vista_previa_ignora_el_cuerpo_y_usa_lo_almacenado(contexto, tmp_path, monkeypatch):
+    """Si llegan variables en la petición, gana lo que hay en la base de datos."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    plantilla = _plantilla(contexto, "CONSTANCIA_SECRETARIAL")
+    obligacion = contexto["obligacion_constancia"]
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{plantilla.id}/generate",
+        json={
+            "obligation_id": obligacion.id,
+            "numero_resolucion": "VALOR-FICTICIO",
+            "nombre_usuario": "Cliente Prueba",
+        },
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    texto = _texto_docx(respuesta.content)
+    assert obligacion.resolution_number in texto
+    assert "VALOR-FICTICIO" not in texto
+    assert "Cliente Prueba" not in texto
+
+
+def test_vista_previa_de_obligacion_incompleta_informa_el_faltante(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    plantilla = _plantilla(contexto, "AUTO_ARCHIVO")
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{plantilla.id}/generate",
+        json={"obligation_id": contexto["obligacion_sin_resolucion"].id},
+    )
+
+    assert respuesta.status_code == 400
+    assert "no se puede previsualizar" in respuesta.json()["detail"]
+
+
+def test_vista_previa_de_plantilla_de_caso_usa_el_cliente_real_de_la_obligacion(contexto, tmp_path, monkeypatch):
+    """Los datos del deudor salen del cliente vinculado, nunca de un literal."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    plantilla = _plantilla(contexto, "AUTO_ARCHIVO")
+    session = contexto["session"]
+    obligacion = contexto["obligacion"]
+    client = session.exec(select(Client).where(Client.id == obligacion.client_id)).first()
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{plantilla.id}/generate",
+        json={"obligation_id": obligacion.id},
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    texto = _texto_docx(respuesta.content)
+    assert client.name in texto
+    assert client.identification in texto

@@ -130,6 +130,13 @@ REGISTRO_CORRESPONDENCIA: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Códigos de plantilla cuyas variables salen de una obligación concreta. Se derivan
+# del registro para no duplicar listas: si mañana hay un tercer formato oficial, la
+# vista previa lo soporta solo con declararlo arriba.
+CODIGOS_CON_OBLIGACION = {
+    detalle["code"]: tipo for tipo, detalle in REGISTRO_CORRESPONDENCIA.items()
+}
+
 
 class FechasPorObligacion(BaseModel):
     """Fechas que el funcionario puede corregir antes de generar."""
@@ -287,6 +294,43 @@ def _problemas_documento(
     # La constancia en su formato vigente no imprime la fecha de ejecutoria, así
     # que no se bloquea por ella; si vuelve el marcador, el contexto la suministra.
     return problemas
+
+
+def _contexto_por_obligacion(
+    session: Session,
+    tenant_id: int,
+    template: DocumentTemplate,
+    obligation_id: int,
+) -> Dict[str, str]:
+    """Variables leídas de la base para previsualizar una plantilla con un caso real.
+
+    No se inventa ningún valor: si al caso le falta un dato que el formato exige, se
+    informa en lugar de emitir el documento con huecos, igual que en la emisión
+    definitiva. Las plantillas sin constructor propio usan el juego de variables del
+    acto administrativo, que es el compartido por los formatos subidos por el tenant.
+    """
+    obligation, client = _filas_obligaciones(session, tenant_id, [obligation_id])[0]
+    tipo = CODIGOS_CON_OBLIGACION.get((template.code or "").upper())
+
+    if tipo is None:
+        if not obligation.resolution_date:
+            raise HTTPException(
+                status_code=400,
+                detail=f"La obligación {obligation.id} no tiene fecha de resolución",
+            )
+        return _correspondence_context(obligation, client)
+
+    fechas = _resolver_fechas(session, tipo, obligation, None)
+    problemas = _problemas_documento(tipo, obligation, fechas)
+    if problemas:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"La obligación {obligation.id} no se puede previsualizar: "
+                f"{', '.join(problemas)}"
+            ),
+        )
+    return _contexto_documento(tipo, obligation, client, fechas)
 
 
 def _convertir_docx_a_pdf(docx_path: str, pdf_path: str, perfil_dir: str) -> None:
@@ -1197,6 +1241,33 @@ def generate_document_from_template(
                 data={"template_id": template_id, "tenant_id": current_user.tenant_id}
             )
             raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+        
+        # Las plantillas de caso se previsualizan con datos reales de una obligación.
+        # Sin obligation_id se rechaza el intento: un documento oficial lleno con
+        # valores de ejemplo no es una vista previa, es desinformación. Si se envía,
+        # el cuerpo de la petición deja de importar: manda lo que hay en la base.
+        codigo_plantilla = (template.code or "").upper()
+        obligation_id = variables.get("obligation_id") if isinstance(variables, dict) else None
+        if obligation_id is not None:
+            try:
+                obligation_id = int(obligation_id)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail="obligation_id debe ser un identificador numérico",
+                )
+            variables = _contexto_por_obligacion(
+                session, current_user.tenant_id, template, obligation_id
+            )
+        elif codigo_plantilla in CODIGOS_CON_OBLIGACION:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"La vista previa de {codigo_plantilla} requiere una obligación "
+                    "real: seleccione una obligación en lugar de generar el documento "
+                    "con datos de ejemplo."
+                ),
+            )
         
         # La fuente de verdad de una plantilla es su binario en document_templates. El
         # archivo en disco es solo un espejo con nombre legible

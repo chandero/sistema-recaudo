@@ -477,16 +477,24 @@
 
         <div class="field">
           <label class="block mb-2 font-medium">
-            <i class="pi pi-user mr-1"></i>Seleccionar Cliente para Vista Previa
+            <i class="pi pi-list mr-1"></i>Obligación para la vista previa
           </label>
           <Dropdown 
-            v-model="selectedPreviewClient" 
-            :options="clients" 
-            optionLabel="name" 
+            v-model="selectedPreviewObligation" 
+            :options="previewObligations" 
+            optionLabel="label" 
             optionValue="id"
-            placeholder="Seleccione un cliente para generar la vista previa"
+            filter
+            :loading="previewLoading"
+            placeholder="Seleccione una obligación real del sistema"
+            emptyMessage="No hay obligaciones cargadas para este tenant"
             class="w-full"
           />
+          <small class="block mt-2 text-gray-500">
+            El documento se arma con los datos almacenados de la obligación: número y
+            fechas de resolución, cuenta y datos del deudor. No se usan valores de
+            ejemplo.
+          </small>
         </div>
 
         <Divider />
@@ -505,11 +513,14 @@
                 style="border: none;"
               ></iframe>
             </div>
-            <div v-else-if="!selectedPreviewClient" class="text-center p-4 text-gray-500">
-              Vista previa no disponible. Seleccione un cliente para generar la vista previa.
+            <div v-else-if="previewError" class="text-center p-4 text-red-600">
+              {{ previewError }}
+            </div>
+            <div v-else-if="!selectedPreviewObligation" class="text-center p-4 text-gray-500">
+              Seleccione una obligación real para generar la vista previa.
             </div>
             <div v-else class="text-center p-4 text-gray-500">
-              Haga clic en "Generar Vista Previa" para ver el contenido de la plantilla con los datos del cliente seleccionado.
+              Haga clic en "Generar Vista Previa" para ver el documento con los datos de la obligación seleccionada.
             </div>
           </div>
         </div>
@@ -527,7 +538,8 @@
           @click="generateTemplatePreview(selectedTemplateForPreview)"
           severity="secondary"
           outlined
-          :disabled="!selectedPreviewClient"
+          :loading="previewLoading"
+          :disabled="!selectedPreviewObligation"
         />
         <Button 
           label="Descargar" 
@@ -689,7 +701,7 @@ import DataTableWrapper from '@/components/DataTableWrapper.vue';
 import DocumentGenerator from '@/components/DocumentGenerator.vue';
 import { FilterMatchMode } from 'primevue/api';
 import { useToast } from 'primevue/usetoast';
-import { documentService } from '@/services/api'; // Corregir import
+import { documentService, clientService, obligationService } from '@/services/api';
 
 // Importar componentes adicionales
 import DataTable from 'primevue/datatable';
@@ -717,7 +729,7 @@ const templateReemplazo = ref(null);
 const reemplazoArchivo = ref(null);
 const reemplazando = ref(false);
 
-// Sample data - in a real app this would come from an API
+// Listas vacías hasta que el backend responde: esta vista no maneja datos propios.
 const documents = ref([]);
 const templates = ref([]);
 const uploadDialog = ref(false);
@@ -853,16 +865,16 @@ const statuses = ref([
   { label: 'Enviado', value: 'sent' }
 ]);
 
-// Define sample clients
-const clients = ref([
-  { id: 1, name: 'Juan Pérez' },
-  { id: 2, name: 'María García' },
-  { id: 3, name: 'Carlos López' }
-]);
+// Datos de la vista previa de plantillas. Antes se listaban clientes de ejemplo y el
+// documento salía con nombres inventados; ahora se elige una obligación real del
+// tenant y las variables las pone el backend al leer la base de datos.
+const clients = ref([]);
+const previewObligations = ref([]);
 
 onMounted(() => {
   loadDocuments();
   loadTemplates();
+  loadPreviewData();
 });
 
 const loadDocuments = async () => {
@@ -1045,15 +1057,22 @@ const confirmDeleteDocument = (doc) => {
 const viewTemplate = (template) => {
   selectedTemplateForPreview.value = template;
   templatePreviewDialog.value = true;
-  
-  // Generar la vista previa del contenido de la plantilla
-  nextTick(() => {
-    generateTemplatePreview(template);
-  });
+
+  // La vista previa ya no se dispara sola: sin una obligación elegida solo
+  // produciría un formato con los campos vacíos.
+  previewError.value = '';
+  if (templatePreviewUrl.value) {
+    URL.revokeObjectURL(templatePreviewUrl.value);
+    templatePreviewUrl.value = '';
+  }
+  if (!previewObligations.value.length) {
+    loadPreviewData();
+  }
 };
 
 const closeTemplatePreview = () => {
   templatePreviewDialog.value = false;
+  previewError.value = '';
   // Liberar la URL de vista previa para evitar fugas de memoria
   if (templatePreviewUrl.value) {
     URL.revokeObjectURL(templatePreviewUrl.value);
@@ -1283,50 +1302,77 @@ const formatDate = (dateString) => {
 
 // Variable para almacenar la URL de vista previa de la plantilla
 const templatePreviewUrl = ref('');
-// Variable para almacenar el cliente seleccionado para la vista previa
-const selectedPreviewClient = ref(null);
+// Obligación real elegida y estado del diálogo de vista previa
+const selectedPreviewObligation = ref(null);
+const previewLoading = ref(false);
+const previewError = ref('');
+
+// Carga las obligaciones del tenant con el nombre de su cliente para poblar el
+// selector. Se piden de una vez porque el diálogo filtra en el navegador.
+const loadPreviewData = async () => {
+  previewLoading.value = true;
+  try {
+    const [respuestaClientes, respuestaObligaciones] = await Promise.all([
+      clientService.getAll({ limit: 1000 }),
+      obligationService.getAll({ limit: 500 }),
+    ]);
+    clients.value = respuestaClientes.data || [];
+    previewObligations.value = (respuestaObligaciones.data || []).map((obligacion) => {
+      const cliente = clients.value.find((item) => item.id === obligacion.client_id);
+      const cuenta = obligacion.description || `ID ${obligacion.id}`;
+      return {
+        id: obligacion.id,
+        label: `Res. ${obligacion.resolution_number || 'sin número'} · ${cliente?.name || 'cliente sin datos'} · cuenta ${cuenta}`,
+      };
+    });
+  } catch (error) {
+    console.error('No se pudieron cargar las obligaciones para la vista previa:', error);
+    clients.value = [];
+    previewObligations.value = [];
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
+// El servicio pide la respuesta como blob incluso cuando el servidor responde un
+// error, así que el detalle hay que sacarlo del Blob para poder mostrarlo.
+const leerErrorDeRespuesta = async (data) => {
+  if (data instanceof Blob) {
+    try {
+      return JSON.parse(await data.text()).detail;
+    } catch (errorLectura) {
+      return 'No se pudo generar la vista previa.';
+    }
+  }
+  return data?.detail || 'No se pudo generar la vista previa.';
+};
 
 // Función para generar vista previa de la plantilla
 const generateTemplatePreview = async (template) => {
+  previewError.value = '';
+  if (!selectedPreviewObligation.value) {
+    previewError.value = 'Seleccione una obligación real para generar la vista previa.';
+    return;
+  }
+
+  previewLoading.value = true;
   try {
-    // Si no hay cliente seleccionado, usar uno de ejemplo
-    let clientToUse;
-    if (selectedPreviewClient.value) {
-      // Buscar el cliente completo basado en el ID seleccionado
-      clientToUse = clients.value.find(client => client.id === selectedPreviewClient.value);
-      if (!clientToUse) {
-        // Si no se encuentra el cliente, usar datos de ejemplo
-        clientToUse = {
-          id: 1,
-          name: 'Cliente Prueba',
-          email: 'cliente@prueba.com',
-          phone: '3001234567',
-          address: 'Calle prueba 123',
-          city: 'Ciudad Prueba',
-        };
-      }
-    } else {
-      // Usar un cliente de ejemplo para generar la vista previa
-      clientToUse = {
-        id: 1,
-        name: 'Cliente Prueba',
-        email: 'cliente@prueba.com',
-        phone: '3001234567',
-        address: 'Calle prueba 123',
-        city: 'Ciudad Prueba',
-        // Agregar más campos según las variables de la plantilla
-      };
+    const response = await documentService.generateDocumentFromTemplate(template.id, {
+      obligation_id: selectedPreviewObligation.value,
+    });
+
+    if (templatePreviewUrl.value) {
+      URL.revokeObjectURL(templatePreviewUrl.value);
     }
-
-    // Generar el documento con la plantilla y los datos del cliente
-    const response = await documentService.generateDocumentFromTemplate(template.id, clientToUse);
-
     // Crear una URL para la vista previa
     const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
     templatePreviewUrl.value = URL.createObjectURL(blob);
   } catch (error) {
     console.error('Error generando vista previa de la plantilla:', error);
     templatePreviewUrl.value = '';
+    previewError.value = await leerErrorDeRespuesta(error.response?.data);
+  } finally {
+    previewLoading.value = false;
   }
 };
 
