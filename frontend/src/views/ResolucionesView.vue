@@ -77,7 +77,15 @@
             <h3 class="m-0 flex align-items-center gap-2">
               <i class="pi pi-file-export"></i>Asignación Masiva de Resoluciones
             </h3>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
+              <Button
+                :label="todasAbiertas ? 'Contraer todo' : 'Expandir todo'"
+                :icon="todasAbiertas ? 'pi pi-minus-square' : 'pi pi-plus-square'"
+                size="small"
+                text
+                severity="secondary"
+                @click="alternarTodas"
+              />
               <Button
                 label="Generar correspondencia ZIP"
                 icon="pi pi-envelope"
@@ -117,11 +125,22 @@
         </template>
         <template #content>
           <!-- Datos obligatorios de la resolución -->
-          <div class="resolution-data mb-4">
-            <h4 class="mt-0 mb-3 flex align-items-center gap-2">
+          <h4 class="seccion-titulo m-0">
+            <button
+              type="button"
+              class="seccion-cabecera"
+              :aria-expanded="String(estaAbierta('datos'))"
+              @click="alternar('datos')"
+            >
               <i class="pi pi-file-edit text-purple-600"></i>
-              Datos de la resolución
-            </h4>
+              <span>Datos de la resolución</span>
+              <i
+                class="pi seccion-flecha"
+                :class="estaAbierta('datos') ? 'pi-chevron-up' : 'pi-chevron-down'"
+              ></i>
+            </button>
+          </h4>
+          <div v-show="estaAbierta('datos')" class="resolution-data mb-4">
             <div class="grid gap-3">
               <div class="col-12 md:col-3">
                 <div class="field">
@@ -201,11 +220,25 @@
             </Message>
           </div>
 
-          <div class="resolution-data mb-4">
-            <h4 class="mt-0 mb-3 flex align-items-center gap-2">
+          <h4 class="seccion-titulo m-0">
+            <button
+              type="button"
+              class="seccion-cabecera"
+              :aria-expanded="String(estaAbierta('impresion'))"
+              @click="alternar('impresion')"
+            >
               <i class="pi pi-print text-blue-600"></i>
-              Impresión de correspondencia por rango
-            </h4>
+              <span>Impresión de correspondencia por rango</span>
+              <span v-if="printRange.from && printRange.to" class="seccion-dato">
+                {{ printRange.from }} – {{ printRange.to }}
+              </span>
+              <i
+                class="pi seccion-flecha"
+                :class="estaAbierta('impresion') ? 'pi-chevron-up' : 'pi-chevron-down'"
+              ></i>
+            </button>
+          </h4>
+          <div v-show="estaAbierta('impresion')" class="resolution-data mb-4">
             <div class="grid gap-3 align-items-end">
               <div class="col-12 md:col-3">
                 <label class="font-semibold block mb-2" for="print-resolution-from">Resolución desde</label>
@@ -255,11 +288,25 @@
           </div>
 
           <!-- Exportar a Excel por rango de resoluciones -->
-          <div class="resolution-data mb-4">
-            <h4 class="mt-0 mb-3 flex align-items-center gap-2">
+          <h4 class="seccion-titulo m-0">
+            <button
+              type="button"
+              class="seccion-cabecera"
+              :aria-expanded="String(estaAbierta('excel'))"
+              @click="alternar('excel')"
+            >
               <i class="pi pi-table text-green-600"></i>
-              Exportar obligaciones a Excel por rango
-            </h4>
+              <span>Exportar obligaciones a Excel por rango</span>
+              <span v-if="excelRange.from && excelRange.to" class="seccion-dato">
+                {{ excelRange.from }} – {{ excelRange.to }}
+              </span>
+              <i
+                class="pi seccion-flecha"
+                :class="estaAbierta('excel') ? 'pi-chevron-up' : 'pi-chevron-down'"
+              ></i>
+            </button>
+          </h4>
+          <div v-show="estaAbierta('excel')" class="resolution-data mb-4">
             <div class="grid gap-3 align-items-end">
               <div class="col-12 md:col-3">
                 <label class="font-semibold block mb-2" for="excel-resolution-from">Resolución desde</label>
@@ -299,7 +346,22 @@
           </div>
 
           <!-- Filtros -->
-          <div class="flex flex-wrap gap-3 mb-4">
+          <h4 class="seccion-titulo m-0">
+            <button
+              type="button"
+              class="seccion-cabecera"
+              :aria-expanded="String(estaAbierta('filtros'))"
+              @click="alternar('filtros')"
+            >
+              <i class="pi pi-filter text-orange-600"></i>
+              <span>Filtros y selección masiva</span>
+              <i
+                class="pi seccion-flecha"
+                :class="estaAbierta('filtros') ? 'pi-chevron-up' : 'pi-chevron-down'"
+              ></i>
+            </button>
+          </h4>
+          <div v-show="estaAbierta('filtros')" class="flex flex-wrap gap-3 mb-4">
             <Dropdown 
               v-model="filtroEstado" 
               :options="estadosDisponibles" 
@@ -338,7 +400,27 @@
           </div>
 
           <!-- Tabla de Obligaciones -->
+          <h4 class="seccion-titulo m-0">
+            <button
+              type="button"
+              class="seccion-cabecera"
+              :aria-expanded="String(estaAbierta('tabla'))"
+              @click="alternar('tabla')"
+            >
+              <i class="pi pi-list text-primary"></i>
+              <span>Obligaciones</span>
+              <span class="seccion-dato">{{ procesosFiltrados.length }} obligación(es)</span>
+              <span v-if="procesosSeleccionados.length" class="seccion-dato">
+                {{ procesosSeleccionados.length }} seleccionada(s)
+              </span>
+              <i
+                class="pi seccion-flecha"
+                :class="estaAbierta('tabla') ? 'pi-chevron-up' : 'pi-chevron-down'"
+              ></i>
+            </button>
+          </h4>
           <DataTable 
+            v-show="estaAbierta('tabla')"
             :value="procesosFiltrados" 
             :loading="loading"
             dataKey="obligation_id"
@@ -423,7 +505,7 @@
           </DataTable>
 
           <!-- Resumen de Selección -->
-          <div v-if="procesosSeleccionados.length > 0" class="mt-4">
+          <div v-if="estaAbierta('tabla') && procesosSeleccionados.length > 0" class="mt-4">
             <Card class="bg-blue-50 border-blue-200">
               <template #content>
                 <div class="flex flex-column gap-3">
@@ -747,6 +829,7 @@ import { useToast } from 'primevue/usetoast';
 import Checkbox from 'primevue/checkbox';
 import RadioButton from 'primevue/radiobutton';
 import api, { documentService } from '../services/api';
+import { useSeccionesColapsables } from '../composables/useSeccionesColapsables';
 
 const toast = useToast();
 
@@ -763,6 +846,21 @@ const estadosDisponibles = ref([]);
 const filtroEstado = ref(null);
 const printRange = ref({ from: null, to: null });
 const excelRange = ref({ from: null, to: null });
+
+// Paneles de la tarjeta de asignación: se abren y cierran aparte, y el navegador
+// recuerda cuál quedó abierto. Las utilidades ocasionales (impresión y Excel) arrancan
+// cerradas para que la tabla quede a la vista al entrar.
+const SECCIONES_RESOLUCIONES = {
+  datos: true,
+  impresion: false,
+  excel: false,
+  filtros: true,
+  tabla: true
+};
+const { estaAbierta, alternar, alternarTodas, todasAbiertas } = useSeccionesColapsables(
+  'resoluciones',
+  SECCIONES_RESOLUCIONES
+);
 
 // Configuración
 const config = ref({
@@ -1442,6 +1540,50 @@ onMounted(() => {
   border-left: 4px solid var(--primary-color);
   border-radius: 8px;
   background: var(--surface-50);
+}
+
+/* Cabeceras de las secciones colapsables de la vista */
+.seccion-titulo {
+  margin-bottom: 0.5rem;
+}
+
+.seccion-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-50);
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.seccion-cabecera:hover {
+  background: var(--surface-100);
+  border-color: var(--primary-color);
+}
+
+.seccion-cabecera:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.seccion-flecha {
+  margin-left: auto;
+  color: var(--text-color-secondary);
+}
+
+.seccion-dato {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-color-secondary);
 }
 
 @media (min-width: 768px) {
