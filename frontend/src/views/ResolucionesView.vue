@@ -19,8 +19,8 @@
               <div class="resumen-icon bg-primary">
                 <i class="pi pi-file"></i>
               </div>
-              <div>
-                <span class="text-sm text-gray-500 block">Obligaciones Pendientes</span>
+              <div class="overflow-hidden">
+                <span class="cifra-label text-xs text-gray-500 block" title="Obligaciones Pendientes">Obligaciones Pendientes</span>
                 <span class="text-2xl font-bold text-primary">{{ documentosPendientes }}</span>
               </div>
             </div>
@@ -29,8 +29,8 @@
               <div class="resumen-icon bg-success">
                 <i class="pi pi-check-circle"></i>
               </div>
-              <div>
-                <span class="text-sm text-gray-500 block">Resoluciones Asignadas</span>
+              <div class="overflow-hidden">
+                <span class="cifra-label text-xs text-gray-500 block" title="Resoluciones Asignadas">Resoluciones Asignadas</span>
                 <span class="text-2xl font-bold text-green-600">{{ resolucionesAsignadas }}</span>
               </div>
             </div>
@@ -39,8 +39,8 @@
               <div class="resumen-icon bg-warning">
                 <i class="pi pi-exclamation-triangle"></i>
               </div>
-              <div>
-                <span class="text-sm text-gray-500 block">Radicados Generados</span>
+              <div class="overflow-hidden">
+                <span class="cifra-label text-xs text-gray-500 block" title="Radicados Generados">Radicados Generados</span>
                 <span class="text-2xl font-bold text-orange-600">{{ radicadosGenerados }}</span>
               </div>
             </div>
@@ -49,8 +49,8 @@
               <div class="resumen-icon bg-info">
                 <i class="pi pi-send"></i>
               </div>
-              <div>
-                <span class="text-sm text-gray-500 block">En Correspondencia</span>
+              <div class="overflow-hidden">
+                <span class="cifra-label text-xs text-gray-500 block" title="En Correspondencia">En Correspondencia</span>
                 <span class="text-2xl font-bold text-blue-600">{{ enCorrespondencia }}</span>
               </div>
             </div>
@@ -1734,32 +1734,50 @@ onMounted(() => {
   }
 }
 
-/* Una sola fila para las cuatro cifras. El ancho base de 190px hace que se
-   repartan el espacio disponible y solo se apilen cuando el ancho no alcanza. */
+/* Una sola fila para las cuatro cifras, siempre. Cada bloque recibe flex-basis
+   cero, o sea un cuarto del ancho, así que la fila no se reenvuelve ni siquiera
+   con el menú lateral abierto; la etiqueta se recorta con suspensivos cuando no
+   cabe y el title conserva el texto completo. Solo en teléfono se permiten dos
+   filas, donde cuatro columnas serían ilegibles. */
 .resumen-cifras {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .cifra {
-  flex: 1 1 190px;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
+  gap: 0.6rem;
+}
+
+.cifra-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 767px) {
+  .resumen-cifras {
+    flex-wrap: wrap;
+  }
+
+  .cifra {
+    flex: 1 1 45%;
+  }
 }
 
 .resumen-icon {
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 1.5rem;
+  font-size: 1.2rem;
 }
 
 .resumen-icon.bg-primary {
