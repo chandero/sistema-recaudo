@@ -130,19 +130,28 @@ las 60 copias recientes conservadas (unos 300 MB).
 | Copia | Ruta |
 |---|---|
 | Local | `/opt/siap/backups_cyberrit/cyberrit_<fecha>.tar.gz` |
-| Remota | `84.247.164.191:/opt/giron/backups_cyberrit`, vía el `rsync` que ya ejecuta `/usr/bin/siap_backup.bash` sobre todo `/opt/siap` |
+| Remota | `84.247.164.191:/opt/giron/siap/backups_cyberrit`, heredada del `rsync` que `/usr/bin/siap_backup.bash` ya ejecuta sobre todo `/opt/siap`. La fuente va sin barra final, por eso el directorio se anida bajo `/opt/giron/siap` en lugar de caer directo en `/opt/giron` |
 | Estado | `/opt/cyberrit/backups/.ultimo_respaldo` y `/var/log/cyberrit_backup.log` |
 
 Vive dentro de `/opt/siap` para heredar la sincronización remota ya existente, pero
 en un directorio propio: la rotación de SIAP elige «la más antigua» con un orden
 numérico sobre nombres alfabéticos y borraría los archivos ajenos que aparezcan
-antes.
+antes. Los permisos viajan con el `rsync`: el directorio queda `700` y cada copia
+`600`, porque dentro del `.tar.gz` va el `.env`.
 
-**Alta en cron** (una sola vez, sin tocar las entradas existentes):
+Si falla el envío remoto, el respaldo local no se considera roto: se registra un
+`AVISO` en el log y la cadena sigue en la siguiente ejecución programada.
+
+**Alta en cron** (una sola vez, sin tocar las entradas existentes de SIAP):
 
 ```bash
-ssh root@giron.tiksgroup.co 'crontab <( { crontab -l 2>/dev/null | grep -v backup_data.sh; printf "0 3 * * * /opt/cyberrit/backup_data.sh >>/var/log/cyberrit_backup.log 2>&1\n0 15 * * * /opt/cyberrit/backup_data.sh >>/var/log/cyberrit_backup.log 2>&1\n"; } )'
+ssh root@giron.tiksgroup.co 'D=$(mktemp); { crontab -l 2>/dev/null | grep -v backup_data.sh; printf "0 3 * * * /opt/cyberrit/backup_data.sh >>/var/log/cyberrit_backup.log 2>&1\n0 15 * * * /opt/cyberrit/backup_data.sh >>/var/log/cyberrit_backup.log 2>&1\n"; } >"$D"; crontab "$D"; rm -f "$D"'
 ```
+
+Se reescribe el crontab completo desde un archivo temporal en lugar de usar la
+sustitución de proceso `crontab <( … )`: el `crontab` de Debian rechaza ese
+archivo y responde `Not a regular file`. Al filtrar antes `grep -v backup_data.sh`
+el procedimiento es idempotente: repetirlo no duplica las dos líneas.
 
 **Restaurar**:
 

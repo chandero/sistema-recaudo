@@ -10,10 +10,13 @@
 #
 # DÓNDE
 #   Local:  /opt/siap/backups_cyberrit
-#   Remoto: 84.247.164.191:/opt/giron, heredado del rsync que ejecuta
-#           /usr/bin/siap_backup.bash a través de /opt/script_sender.bash. El
-#           respaldo vive DENTRO de /opt/siap precisamente para subirse a ese
-#           viaje sin tener que inventar otro canal de sincronización.
+#   Remoto: 84.247.164.191:/opt/giron/siap/backups_cyberrit. El viaje lo hace el
+#           rsync que /usr/bin/siap_backup.bash dispara a través de
+#           /opt/script_sender.bash sobre /opt/siap. La fuente va sin barra final
+#           (rsync -avP /opt/siap destino:/opt/giron), así que el directorio se
+#           anida: llega a /opt/giron/siap/... y no a /opt/giron/... Este respaldo
+#           vive DENTRO de /opt/siap precisamente para subirse a ese viaje sin
+#           tener que inventar otro canal de sincronización.
 #   En un directorio propio y no en /opt/siap/backups: la rotación de SIAP elige
 #   «la más antigua» con ls | sort -n sobre nombres que empiezan por letra, y un
 #   archivo cyberrit_* aparecería primero en ese orden falso. Compartir carpeta
