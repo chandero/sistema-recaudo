@@ -11,64 +11,52 @@
         </div>
       </div>
 
-      <!-- Tarjetas de Resumen -->
-      <div class="grid gap-3 mb-4">
-        <Card class="shadow-1">
-          <template #content>
-            <div class="flex align-items-center gap-3">
+      <!-- Cifras de resumen: las cuatro comparten una sola fila -->
+      <Card class="shadow-1 mb-4">
+        <template #content>
+          <div class="resumen-cifras">
+            <div class="cifra">
               <div class="resumen-icon bg-primary">
                 <i class="pi pi-file"></i>
               </div>
-              <div class="flex-1">
+              <div>
                 <span class="text-sm text-gray-500 block">Obligaciones Pendientes</span>
                 <span class="text-2xl font-bold text-primary">{{ documentosPendientes }}</span>
               </div>
             </div>
-          </template>
-        </Card>
 
-        <Card class="shadow-1">
-          <template #content>
-            <div class="flex align-items-center gap-3">
+            <div class="cifra">
               <div class="resumen-icon bg-success">
                 <i class="pi pi-check-circle"></i>
               </div>
-              <div class="flex-1">
+              <div>
                 <span class="text-sm text-gray-500 block">Resoluciones Asignadas</span>
                 <span class="text-2xl font-bold text-green-600">{{ resolucionesAsignadas }}</span>
               </div>
             </div>
-          </template>
-        </Card>
 
-        <Card class="shadow-1">
-          <template #content>
-            <div class="flex align-items-center gap-3">
+            <div class="cifra">
               <div class="resumen-icon bg-warning">
                 <i class="pi pi-exclamation-triangle"></i>
               </div>
-              <div class="flex-1">
+              <div>
                 <span class="text-sm text-gray-500 block">Radicados Generados</span>
                 <span class="text-2xl font-bold text-orange-600">{{ radicadosGenerados }}</span>
               </div>
             </div>
-          </template>
-        </Card>
 
-        <Card class="shadow-1">
-          <template #content>
-            <div class="flex align-items-center gap-3">
+            <div class="cifra">
               <div class="resumen-icon bg-info">
                 <i class="pi pi-send"></i>
               </div>
-              <div class="flex-1">
+              <div>
                 <span class="text-sm text-gray-500 block">En Correspondencia</span>
                 <span class="text-2xl font-bold text-blue-600">{{ enCorrespondencia }}</span>
               </div>
             </div>
-          </template>
-        </Card>
-      </div>
+          </div>
+        </template>
+      </Card>
 
       <!-- Asignación Masiva de Resoluciones -->
       <Card class="shadow-1">
@@ -1746,9 +1734,26 @@ onMounted(() => {
   }
 }
 
+/* Una sola fila para las cuatro cifras. El ancho base de 190px hace que se
+   repartan el espacio disponible y solo se apilen cuando el ancho no alcanza. */
+.resumen-cifras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.cifra {
+  flex: 1 1 190px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
 .resumen-icon {
   width: 50px;
   height: 50px;
+  flex-shrink: 0;
   border-radius: 10px;
   display: flex;
   align-items: center;
