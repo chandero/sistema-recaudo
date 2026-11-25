@@ -1198,20 +1198,35 @@ def generate_document_from_template(
             )
             raise HTTPException(status_code=404, detail="Plantilla no encontrada")
         
+        # La fuente de verdad de una plantilla es su binario en document_templates. El
+        # archivo en disco es solo un espejo con nombre legible
+        # (1_constancia_secretarial.docx), que no coincide con el código de la
+        # plantilla y queda desactualizado después de un reemplazo por API. Cuando hay
+        # binario se previsualiza el binario; el disco queda como respaldo.
+        copia_de_base = False
+        file_path = None
+        if template.content:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as copia:
+                file_path = copia.name
+                copia_de_base = True
+                copia.write(template.content)
+        
         # El archivo se guarda con el formato: {tenant_id}_{nombre_original_del_archivo}
         # Necesitamos encontrar el archivo correcto basado en el código de la plantilla
         # Busquemos archivos que comiencen con el prefijo del tenant y contengan el código
-        pattern = os.path.join(UPLOAD_DIR, f"{current_user.tenant_id}_*{template.code}*")
-        matching_files = glob.glob(pattern)
-        
-        file_path = None
-        if matching_files:
-            # Tomar el primer archivo que coincida
-            file_path = matching_files[0]
-        else:
-            # Si no se encuentra con el patrón anterior, probar con el nombre exacto del código
-            file_extension = ".docx" if template.template_type == "DOCX" else ".dotx"
-            file_path = os.path.join(UPLOAD_DIR, f"{current_user.tenant_id}_{template.code}{file_extension}")
+        if file_path is None:
+            # Solo las plantillas registradas antes de guardar el binario en la base se
+            # resuelven por nombre en disco.
+            pattern = os.path.join(UPLOAD_DIR, f"{current_user.tenant_id}_*{template.code}*")
+            matching_files = glob.glob(pattern)
+            
+            if matching_files:
+                # Tomar el primer archivo que coincida
+                file_path = matching_files[0]
+            else:
+                # Si no se encuentra con el patrón anterior, probar con el nombre exacto del código
+                file_extension = ".docx" if template.template_type == "DOCX" else ".dotx"
+                file_path = os.path.join(UPLOAD_DIR, f"{current_user.tenant_id}_{template.code}{file_extension}")
         
         logger.info(
             module="document_generation",
@@ -1321,6 +1336,11 @@ def generate_document_from_template(
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
             raise HTTPException(status_code=500, detail=f"Error al renderizar la plantilla: {str(render_error)}")
+        finally:
+            # La copia del binario solo se necesita mientras renderiza: se elimina aquí
+            # para no dejar un archivo huérfano en cada vista previa.
+            if copia_de_base and os.path.exists(file_path):
+                os.unlink(file_path)
         
         # Leer el contenido del archivo generado
         try:

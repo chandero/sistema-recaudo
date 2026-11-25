@@ -7,6 +7,7 @@ import io
 import os
 import re
 import smtplib
+import tempfile
 import zipfile
 from datetime import date, datetime
 
@@ -959,3 +960,112 @@ def test_la_generacion_usa_el_binario_reemplazado(contexto, tmp_path, monkeypatc
         )
     assert "FORMATO-NUEVO-2026" in texto
     assert "3849" in texto
+
+
+# ─────────────────────────────────────────────────────────────────
+# Vista previa genérica de DocumentosView: /templates/{id}/generate
+# ─────────────────────────────────────────────────────────────────
+
+def _texto_docx(payload: bytes) -> str:
+    """Texto de un DOCX suelto: este endpoint no responde con ZIP como los lotes."""
+    return "\n".join(p.text for p in Document(io.BytesIO(payload)).paragraphs)
+
+
+def _plantilla(contexto, codigo: str) -> DocumentTemplate:
+    return contexto["session"].exec(
+        select(DocumentTemplate).where(DocumentTemplate.code == codigo)
+    ).first()
+
+
+def test_vista_previa_usa_el_binario_poniendo_el_espejo_con_otro_nombre(contexto, tmp_path, monkeypatch):
+    """El espejo en disco se llama por nombre legible, no por el código."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    # Reproducen el estado del servidor: existe 1_constancia_secretarial.docx y la
+    # búsqueda por código (1_CONSTANCIA_SECRETARIAL.docx) no encuentra nada.
+    (tmp_path / "1_constancia_secretarial.docx").write_bytes(
+        _crear_plantilla_docx(marca="ESPEJO-ANTIGUO")
+    )
+    plantilla = _plantilla(contexto, "CONSTANCIA_SECRETARIAL")
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{plantilla.id}/generate",
+        json={"numero_resolucion": "5150"},
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    texto = _texto_docx(respuesta.content)
+    assert "ESPEJO-ANTIGUO" not in texto
+    assert "5150" in texto
+
+
+def test_vista_previa_sin_binario_sigue_resolviendo_el_disco(contexto, tmp_path, monkeypatch):
+    """Las plantillas anteriores al BLOB se generan desde el archivo en disco."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    legacy = DocumentTemplate(
+        tenant_id=contexto["tenant"].id,
+        code="GD-F.03",
+        name="Acto administrativo legado",
+        template_type=TemplateType.DOCX,
+        is_active=True,
+        content=b"",
+    )
+    contexto["session"].add(legacy)
+    contexto["session"].commit()
+    contexto["session"].refresh(legacy)
+    (tmp_path / "1_GD-F.03Acto_administrativo.docx").write_bytes(
+        _crear_plantilla_docx(marca="ESPEJO-LEGADO")
+    )
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{legacy.id}/generate",
+        json={"numero_resolucion": "5151"},
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert "ESPEJO-LEGADO" in _texto_docx(respuesta.content)
+
+
+def test_vista_previa_sin_binario_y_sin_archivo_avisa_claramente(contexto, tmp_path, monkeypatch):
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    hueca = DocumentTemplate(
+        tenant_id=contexto["tenant"].id,
+        code="SIN_ARCHIVO",
+        name="Plantilla sin soporte",
+        template_type=TemplateType.DOCX,
+        is_active=True,
+        content=b"",
+    )
+    contexto["session"].add(hueca)
+    contexto["session"].commit()
+    contexto["session"].refresh(hueca)
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{hueca.id}/generate", json={}
+    )
+
+    assert respuesta.status_code == 500
+    assert "Archivo de plantilla no encontrado" in respuesta.json()["detail"]
+
+
+def test_vista_previa_no_deja_copias_temporales_de_la_plantilla(contexto, tmp_path, monkeypatch):
+    """La copia del BLOB se consume al renderizar y se borra siempre."""
+    monkeypatch.setattr(documents, "UPLOAD_DIR", str(tmp_path))
+    creados = []
+    original = tempfile.NamedTemporaryFile
+
+    def registrar(*args, **kwargs):
+        archivo = original(*args, **kwargs)
+        creados.append(archivo.name)
+        return archivo
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", registrar)
+    plantilla = _plantilla(contexto, "AUTO_ARCHIVO")
+
+    respuesta = contexto["client"].post(
+        f"/documents/templates/{plantilla.id}/generate",
+        json={"numero_resolucion": "5152"},
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert creados
+    assert [nombre for nombre in creados if os.path.exists(nombre)] == []

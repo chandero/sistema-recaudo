@@ -7,13 +7,20 @@ const apiClient = axios.create({
   baseURL: API_BASE_URL,
 })
 
+// Rutas que negocian la sesión. Para ellas es normal no traer token todavía, y su
+// 401 no significa sesión caducada: tratarlo así recargaba /login y borraba el
+// mensaje de credenciales antes de que el usuario pudiera leerlo.
+const RUTAS_DE_AUTENTICACION = ['/auth/login', '/auth/token', '/auth/logout', '/auth/switch-tenant']
+const negociaSesion = (url) =>
+  RUTAS_DE_AUTENTICACION.some((ruta) => (url || '').includes(ruta))
+
 // Interceptor para agregar token y tenant automáticamente
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
-    } else {
+    } else if (!negociaSesion(config.url)) {
       console.warn('No access_token found in localStorage for request:', config.url)
     }
     
@@ -35,18 +42,12 @@ apiClient.interceptors.request.use(
   }
 )
 
-// Rutas cuyo 401 NO significa sesión caducada: son las que negocian la sesión.
-// Tratarlas como expiración recargaba /login y borraba el mensaje de credenciales
-// antes de que el usuario pudiera leerlo.
-const RUTAS_DE_AUTENTICACION = ['/auth/login', '/auth/token', '/auth/logout', '/auth/switch-tenant']
-
 // Interceptor para manejar errores de autenticación
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      const url = error.config?.url || ''
-      const esIntentoDeSesion = RUTAS_DE_AUTENTICACION.some((ruta) => url.includes(ruta))
+      const esIntentoDeSesion = negociaSesion(error.config?.url)
       // Token expirado o inválido: se limpia la sesión y se vuelve al login, pero
       // solo si la página no es ya el login (evita recargar sobre el propio error).
       if (!esIntentoDeSesion && window.location.pathname !== '/login') {
